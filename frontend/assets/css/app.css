@@ -1,0 +1,49 @@
+:root {
+  --sidebar-w: 240px;
+  --bg-side: #f8f9fa;
+  --border: #dee2e6;
+}
+
+html, body { height: 100%; }
+body { background: #fff; color: #212529; }
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  background: var(--bg-side);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+}
+
+.sidebar .brand { padding: .5rem .25rem 1rem; border-bottom: 1px solid var(--border); }
+.sidebar .nav-link { color: #495057; border-radius: .375rem; padding: .5rem .75rem; }
+.sidebar .nav-link:hover { background: #e9ecef; color: #212529; }
+.sidebar .nav-link.active { background: #0d6efd; color: #fff; }
+.sidebar .nav-link i { margin-right: .5rem; }
+
+.content { padding: 1.25rem 1.5rem; }
+.topbar { border-bottom: 1px solid var(--border); padding-bottom: .75rem; }
+
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+@media (max-width: 992px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+
+.card-kpi { border: 1px solid var(--border); border-radius: .5rem; padding: 1rem; background: #fff; }
+.card-kpi h3 { margin: .25rem 0 0; }
+
+.estado-chip {
+  display: inline-block; padding: .15rem .5rem; border-radius: 999px;
+  font-size: .75rem; font-weight: 600;
+}
+.estado-Borrador        { background: #e9ecef; color: #495057; }
+.estado-PendienteDatos  { background: #fff3cd; color: #664d03; }
+.estado-EnRevision      { background: #cfe2ff; color: #084298; }
+.estado-Aprobada        { background: #d1e7dd; color: #0f5132; }
+.estado-Rechazada       { background: #f8d7da; color: #842029; }
+.estado-Emitida         { background: #cff4fc; color: #055160; }
+.estado-Facturada       { background: #d1e7dd; color: #0f5132; }
+.estado-Anulada         { background: #f8d7da; color: #842029; }
+.estado-Cerrada         { background: #e2e3e5; color: #41464b; }

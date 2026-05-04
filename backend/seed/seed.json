@@ -1,0 +1,72 @@
+{
+  "_doc": "Datos semilla iniciales. Completar campos faltantes antes de correr el seeder. Ver docs/seed-data.md.",
+  "empresas_emisoras": [
+    {
+      "codigo": "MAS_CONSULTORES",
+      "razon_social": "MAS Consultores S.A.",
+      "rut": "78.757.340-1",
+      "giro": "Asesoría en Recursos Humanos",
+      "direccion": "Hernando de Aguirre 268, Oficina 101, Providencia",
+      "telefono": "225840090",
+      "afecto_iva": true
+    },
+    {
+      "codigo": "MAS_CAPACITACION",
+      "razon_social": "Más Capacitación",
+      "rut": "TBD",
+      "giro": "OTEC / Capacitación",
+      "direccion": "TBD",
+      "telefono": "TBD",
+      "afecto_iva": false
+    }
+  ],
+  "coordinadores": [
+    { "nombre": "Macarena Abásolo", "email": "TBD", "slack_user_id": "U07AKJLQCTY", "activo": true },
+    { "nombre": "Monica Da Rocha",  "email": "TBD", "slack_user_id": "U09T7NL350T", "activo": true },
+    { "nombre": "Daniel Llanes",    "email": "TBD", "slack_user_id": "U07AKJLT4G6", "activo": true },
+    { "nombre": "Constanza Gaete",  "email": "TBD", "slack_user_id": "U0AR2F4G4F8", "activo": true }
+  ],
+  "areas": [
+    "MAS Plataformas",
+    "MAS Capacitación"
+  ],
+  "clientes": [
+    {
+      "nombre_corto": "Soprole",
+      "razon_social": "Soprole S.A.",
+      "rut": "76.101.812-4",
+      "giro": "Elaboradora de productos lácteos",
+      "direccion": "Av. Vitacura 4465, Vitacura",
+      "frecuencia": "Mensual",
+      "dia_facturacion": 27,
+      "requiere_hes": false,
+      "coordinador_slack": "U07AKJLQCTY",
+      "estado": "Activo",
+      "receptores": [
+        { "nombre": "Jeannette del Carmen Nanjari Barrera", "email": "jeannette.nanjari@soprole.cl" },
+        { "nombre": "Pablo Ruedi", "email": "pablo.ruedi@soprole.cl" }
+      ],
+      "cps": [
+        { "codigo": "MS25008", "nombre": "Plataforma Nutrir Soprole — split A", "area": "MAS Plataformas" },
+        { "codigo": "MS25009", "nombre": "Plataforma Nutrir Soprole — split B", "area": "MAS Plataformas" }
+      ]
+    },
+    { "nombre_corto": "Hábitat",            "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Ariztía",            "razon_social": "TBD", "rut": "TBD", "frecuencia": "Trimestral", "estado": "TBD" },
+    { "nombre_corto": "Arcor",              "razon_social": "TBD", "rut": "TBD", "frecuencia": "Bimensual", "estado": "TBD" },
+    { "nombre_corto": "Aza",                "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Banco Internacional","razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Beco",               "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Bex",                "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Carozzi",            "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Copec",              "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Emin",               "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Enaex",              "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Flesan",             "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Magotteaux",         "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Resiter",            "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Salmones Austral",   "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Sigdo Koppers",      "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
+    { "nombre_corto": "Transelect",         "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD", "requiere_hes": true }
+  ]
+}

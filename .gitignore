@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Builds and generated assets
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# Credentials - never commit
+service-account.json
+google-credentials.json
+*.pem
+*.key
+*.p12
+
+# Local database and runtime storage
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+backend/storage/
+storage/
+
+# Generated exports
+exports/
+backend/storage/exports/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Caches
+.cache/
+.parcel-cache/
+.vite/
+.eslintcache
+__pycache__/
+*.pyc
+
+# Temporary helpers and scratch files
+_inspect.py
+tmp/
+temp/
+*.tmp
+*.bak
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# OneDrive / Office transient files
+~$*
+*.lnk

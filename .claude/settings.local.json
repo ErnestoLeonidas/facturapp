@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import openpyxl; wb=openpyxl.load_workbook\\('Base de Datos Bot Facturación.xlsx', data_only=True\\); print\\('SHEETS:', wb.sheetnames\\)\")",
+      "Bash(where python3 *)",
+      "Bash(npm ls *)",
+      "Bash(py *)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(node -e \"const {DatabaseSync} = require\\('node:sqlite'\\); const db = new DatabaseSync\\(':memory:'\\); db.exec\\('CREATE TABLE t \\(id TEXT\\)'\\); console.log\\('node:sqlite OK'\\);\")",
+      "Bash(node src/seed.js)",
+      "Bash(node src/server.js)",
+      "Bash(curl -s http://localhost:3000/api/clientes)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('ok:', d.ok, 'count:', d.data && d.data.length\\)\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "PowerShell(Stop-Process *)",
+      "Bash(curl -s http://localhost:3000/api/clientes?estado=Activo)",
+      "Bash(curl -s http://localhost:3000/api/empresas)",
+      "Bash(curl -s http://localhost:3000/api/coordinadores)",
+      "Bash(curl -s -X POST http://localhost:3000/api/solicitudes -H 'Content-Type: application/json' -d '{\"cliente_id\":\"TBD\",\"empresa_emisora\":\"MAS_CONSULTORES\",\"periodo\":\"2026-05\",\"glosa\":\"Test solicitud\",\"items\":[{\"descripcion\":\"Servicio test\",\"cantidad\":1,\"clp_unitario\":1000000}]}')",
+      "Bash(curl -s \"http://localhost:3000/api/clientes?q=Soprole\")",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -X POST http://localhost:3000/api/solicitudes -H 'Content-Type: application/json' -d '{\"cliente_id\":\"e61c8afe-5099-48ed-8484-c5c9012b636c\",\"empresa_emisora\":\"MAS_CONSULTORES\",\"periodo\":\"2026-05\",\"glosa\":\"Servicio administracion soporte mensual Plataforma Nutrir MAS\",\"items\":[{\"descripcion\":\"Soporte mensual\",\"cantidad\":1,\"clp_unitario\":2775051}]}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/solicitudes/6b2c61bb-4ab8-4d74-80ae-b71bfc7e0d03/estado -H 'Content-Type: application/json' -d '{\"hacia\":\"EnRevision\",\"comentario\":\"Listo para revisar\"}')",
+      "Bash(curl -s \"http://localhost:3000/api/uf?fecha=2026-05-03\")",
+      "Bash(curl -s -X POST http://localhost:3000/api/solicitudes/6b2c61bb-4ab8-4d74-80ae-b71bfc7e0d03/estado -H 'Content-Type: application/json' -d '{\"hacia\":\"Aprobada\",\"comentario\":\"Aprobado test\"}')",
+      "Bash(curl -s -X POST http://localhost:3000/api/exportaciones/solicitud/6b2c61bb-4ab8-4d74-80ae-b71bfc7e0d03 -H 'Content-Type: application/json' -d '{}')",
+      "Bash(curl -s http://localhost:3000/)"
+    ]
+  }
+}
