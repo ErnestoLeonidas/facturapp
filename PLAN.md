@@ -136,6 +136,16 @@ npm start          # http://localhost:3000
 - [ ] Bitácora de integración (`uf_cache`, sync logs).
 - [ ] Filtros guardados por usuario.
 
+**Avance integraciones Google:**
+- [x] Dependencia `googleapis` instalada en backend.
+- [x] Cliente Service Account backend-only para Sheets y Drive.
+- [x] Sync `base_facturacion` por `batchGet` desde Google Sheets.
+- [x] Upsert de clientes, CPs asociados a cliente, productos y `cliente_producto`.
+- [x] Bitácora `bitacora_integracion` con estado, filas leídas/procesadas y detalles.
+- [x] Endpoints Drive para listar plantilla, leer metadata y exportar/descargar plantilla viva.
+- [ ] Configurar `GOOGLE_SA_JSON_PATH` real y compartir la planilla/plantilla con el `client_email`.
+- [ ] Definir/confirmar columnas de `proyecciones` para mapearlas a reportes.
+
 ### Fase 3 — Hardening y producción (1 a 2 semanas)
 
 - [ ] Auth con roles.

@@ -34,7 +34,7 @@ r.get('/:id/tiempos', (req, res) => {
     FROM registro_tiempo rt
     JOIN solicitud_factura sf ON sf.id = rt.solicitud_id
     JOIN cliente c ON c.id = sf.cliente_id
-    WHERE rt.desarrollador_id = ?`;
+    WHERE rt.desarrollador_id = ? AND sf.is_delete = 0`;
   const vals = [req.params.id];
   if (desde) { sql += ' AND rt.fecha >= ?'; vals.push(desde); }
   if (hasta) { sql += ' AND rt.fecha <= ?'; vals.push(hasta); }

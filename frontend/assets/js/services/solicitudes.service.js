@@ -3,6 +3,7 @@ window.SolicitudesService = {
   get(id)               { return Api.get('/solicitudes/' + id); },
   create(payload)       { return Api.post('/solicitudes', payload); },
   update(id, payload)   { return Api.patch('/solicitudes/' + id, payload); },
+  delete(id)            { return Api.del('/solicitudes/' + id); },
   cambiarEstado(id, hacia, comentario) {
     return Api.post('/solicitudes/' + id + '/estado', { hacia, comentario });
   },

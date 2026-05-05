@@ -28,10 +28,10 @@ window.SolicitudesView = {
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
               <th>Folio</th><th>Cliente</th><th>Tipo</th><th>Período</th>
-              <th>Empresa</th><th class="text-end">Neto</th><th class="text-end">Total</th>
+              <th>Empresa</th><th>Coordinador</th><th class="text-end">Neto</th><th class="text-end">Total</th>
               <th>Estado</th><th></th>
             </tr></thead>
-            <tbody id="tbl-solicitudes"><tr><td colspan="9" class="text-center py-4">
+            <tbody id="tbl-solicitudes"><tr><td colspan="10" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
@@ -39,9 +39,11 @@ window.SolicitudesView = {
       </div>
     `);
 
+    let filtrosActuales = {};
     const cargar = (params = {}) => {
+      filtrosActuales = params;
       SolicitudesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="9" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="10" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-solicitudes').html(data.map(s => {
           const empresa = s.empresa_emisora === 'MAS_CONSULTORES' ? 'Consultores' : 'Capacitación';
           return `<tr style="cursor:pointer" onclick="location.hash='#/solicitudes/${s.id}'">
@@ -50,11 +52,15 @@ window.SolicitudesView = {
             <td><span class="badge ${s.tipo==='mensual'?'bg-primary':'bg-warning text-dark'}">${s.tipo}</span></td>
             <td>${s.periodo}</td>
             <td><small>${empresa}</small></td>
+            <td>${s.coordinador_nombre || '—'}</td>
             <td class="text-end"><small>${Format.clp(s.monto_neto_clp)}</small></td>
             <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
             <td>${UI.estadoChip(s.estado)}</td>
             <td>
               <a class="btn btn-sm btn-outline-secondary" href="#/solicitudes/${s.id}">Ver</a>
+              <button class="btn btn-sm btn-outline-danger ms-1" data-delete-id="${s.id}" type="button">
+                <i class="bi bi-trash"></i> Eliminar
+              </button>
             </td>
           </tr>`;
         }).join(''));
@@ -67,6 +73,16 @@ window.SolicitudesView = {
       const d = Object.fromEntries(new FormData(e.target).entries());
       Object.keys(d).forEach(k => !d[k] && delete d[k]);
       cargar(d);
+    });
+
+    $('#tbl-solicitudes').on('click', '[data-delete-id]', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = $(this).data('delete-id');
+      SolicitudesView._confirmDelete(id).then(deleted => {
+        if (!deleted) return;
+        cargar(filtrosActuales);
+      });
     });
   },
 
@@ -122,9 +138,13 @@ window.SolicitudesView = {
                     <option value="">— seleccionar —</option>
                   </select>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-3" id="field-oc">
                   <label class="form-label">OC / Nota de Pedido</label>
                   <input class="form-control" name="oc_numero" value="${prefill.oc_numero||''}" ${readonly?'readonly':''}>
+                </div>
+                <div class="col-md-3 d-none" id="field-contrato">
+                  <label class="form-label">N° contrato</label>
+                  <input class="form-control" name="contrato_numero" value="${prefill.contrato_numero||''}" ${readonly?'readonly':''}>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">HES</label>
@@ -144,32 +164,12 @@ window.SolicitudesView = {
               <hr>
 
               <div class="d-flex justify-content-between align-items-center mb-2">
-                <h6 class="mb-0">Ítems</h6>
-                ${!readonly?'<button type="button" class="btn btn-sm btn-outline-secondary" id="btn-add-item">+ Ítem</button>':''}
-              </div>
-              <div class="table-responsive">
-                <table class="table table-sm align-middle">
-                  <thead><tr>
-                    <th>Descripción</th><th>Código ref.</th>
-                    <th class="text-end">Cant.</th>
-                    <th class="text-end">UF unit.</th>
-                    <th class="text-end">CLP unit.</th>
-                    <th class="text-end">Subtotal</th>
-                    ${!readonly?'<th></th>':''}
-                  </tr></thead>
-                  <tbody id="tbody-items"></tbody>
-                </table>
-              </div>
-
-              <hr>
-
-              <div class="d-flex justify-content-between align-items-center mb-2">
                 <h6 class="mb-0">Centros de Proyecto (CP)</h6>
                 ${!readonly?'<button type="button" class="btn btn-sm btn-outline-secondary" id="btn-add-cp">+ CP</button>':''}
               </div>
               <div id="div-cps">
                 <table class="table table-sm align-middle">
-                  <thead><tr><th>Código CP</th><th class="text-end">Monto CLP</th>${!readonly?'<th></th>':''}</tr></thead>
+                  <thead><tr><th>CP del cliente</th><th class="text-end">Monto CLP</th>${!readonly?'<th></th>':''}</tr></thead>
                   <tbody id="tbody-cps"></tbody>
                 </table>
                 <small class="text-muted" id="cp-alerta"></small>
@@ -249,9 +249,14 @@ window.SolicitudesView = {
         if (c.id === (prefill.cliente_id || (prefill.cliente && prefill.cliente.id))) opt.prop('selected', true);
         $selCli.append(opt);
       });
-      // Si tiene cliente precargado, poblar info y receptores
+      // Si tiene cliente precargado, poblar info, receptores y CPs
       const clienteActual = sol && sol.cliente ? sol.cliente : null;
-      if (clienteActual) SolicitudesView._onClienteSeleccionado(clienteActual, sol && sol.receptores);
+      const selectedId = $selCli.val();
+      if (clienteActual) {
+        SolicitudesView._onClienteSeleccionado(clienteActual, sol && sol.receptores, sol && sol.cps);
+      } else if (selectedId) {
+        ClientesService.get(selectedId).then(c => SolicitudesView._onClienteSeleccionado(c, []));
+      }
     });
 
     $selCli.on('change', function() {
@@ -260,15 +265,14 @@ window.SolicitudesView = {
       ClientesService.get(id).then(c => SolicitudesView._onClienteSeleccionado(c, []));
     });
 
-    // Items iniciales
+    // Estado inicial
     SolicitudesView._state = {
       sol, readonly, prefill,
-      items: sol ? sol.items : [],
       cps: sol ? sol.cps : [],
       receptores: sol ? sol.receptores : [],
-      clienteActual: sol ? sol.cliente : null
+      clienteActual: sol ? sol.cliente : null,
+      cpsDisponibles: []
     };
-    SolicitudesView._renderItems();
     SolicitudesView._renderCPs();
     SolicitudesView._renderReceptores();
     SolicitudesView._renderBotones();
@@ -284,13 +288,11 @@ window.SolicitudesView = {
       }).fail(e => UI.toast(e.message || 'Error UF', 'danger'));
     });
 
-    $('#btn-add-item').on('click', () => {
-      SolicitudesView._state.items.push({ descripcion: '', codigo_ref: '', cantidad: 1, uf_unitaria: null, clp_unitario: null, subtotal_clp: 0 });
-      SolicitudesView._renderItems();
-    });
-
     $('#btn-add-cp').on('click', () => {
-      SolicitudesView._state.cps.push({ cp_codigo: '', monto_clp: 0 });
+      const disponibles = SolicitudesView._state.cpsDisponibles || [];
+      if (!SolicitudesView._state.clienteActual) return UI.toast('Selecciona primero un cliente', 'warning');
+      if (!disponibles.length) return UI.toast('El cliente no tiene CPs asociados', 'warning');
+      SolicitudesView._state.cps.push({ cp_id: '', cp_codigo: '', monto_clp: 0 });
       SolicitudesView._renderCPs();
     });
 
@@ -313,53 +315,66 @@ window.SolicitudesView = {
     $('[name=empresa_emisora]').on('change', () => SolicitudesView._recalcular());
   },
 
-  _onClienteSeleccionado(c, receptoresActuales) {
+  _onClienteSeleccionado(c, receptoresActuales, cpsActuales) {
     SolicitudesView._state.clienteActual = c;
+    SolicitudesView._toggleContratoHabitat(c);
     if (!receptoresActuales || !receptoresActuales.length) {
       SolicitudesView._state.receptores = [...(c.receptores || [])];
     }
     SolicitudesView._renderReceptores();
+    ClientesService.cps(c.id).then(cps => {
+      SolicitudesView._state.cpsDisponibles = cps || [];
+      if (!cpsActuales) SolicitudesView._state.cps = [];
+      SolicitudesView._renderCPs();
+    }).fail(e => UI.toast(e.message || 'No se pudieron cargar los CPs del cliente', 'danger'));
     if (!$('[name=hes_numero]').val() && c.requiere_hes) $('[name=hes_numero]').val('');
   },
 
-  _renderItems() {
-    const { items, readonly } = SolicitudesView._state;
-    if (!items.length) { $('#tbody-items').html(`<tr><td colspan="${readonly?6:7}" class="text-center text-muted">Sin ítems</td></tr>`); return; }
-    $('#tbody-items').html(items.map((item, i) => `
-      <tr>
-        <td><input class="form-control form-control-sm" ${readonly?'readonly':''} value="${item.descripcion||''}" data-item="${i}" data-field="descripcion"></td>
-        <td><input class="form-control form-control-sm" ${readonly?'readonly':''} value="${item.codigo_ref||''}" data-item="${i}" data-field="codigo_ref" style="width:90px"></td>
-        <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="0.01" value="${item.cantidad||1}" data-item="${i}" data-field="cantidad" style="width:70px"></td>
-        <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="0.01" value="${item.uf_unitaria||''}" data-item="${i}" data-field="uf_unitaria" placeholder="—" style="width:90px"></td>
-        <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="1" value="${item.clp_unitario||''}" data-item="${i}" data-field="clp_unitario" placeholder="—" style="width:100px"></td>
-        <td class="text-end fw-bold" data-item-subtotal="${i}">${Format.clp(item.subtotal_clp)}</td>
-        ${!readonly?`<td><button class="btn btn-sm btn-outline-danger" onclick="SolicitudesView._removeItem(${i})">×</button></td>`:''}
-      </tr>`).join(''));
-
-    $('#tbody-items input').on('change input', function() {
-      const i = Number($(this).data('item'));
-      const f = $(this).data('field');
-      SolicitudesView._state.items[i][f] = $(this).val();
-      SolicitudesView._recalcular();
-    });
+  _esHabitat(cliente) {
+    return String((cliente && cliente.nombre_corto) || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .includes('HABITAT');
   },
 
-  _removeItem(i) { SolicitudesView._state.items.splice(i, 1); SolicitudesView._renderItems(); SolicitudesView._recalcular(); },
+  _toggleContratoHabitat(cliente) {
+    const esHabitat = SolicitudesView._esHabitat(cliente);
+    $('#field-contrato').toggleClass('d-none', !esHabitat);
+    $('#field-oc').toggleClass('d-none', esHabitat);
+    if (esHabitat) $('[name=oc_numero]').val('');
+    else $('[name=contrato_numero]').val('');
+  },
 
   _renderCPs() {
-    const { cps, readonly } = SolicitudesView._state;
+    const { cps, readonly, cpsDisponibles } = SolicitudesView._state;
     if (!cps.length) { $('#tbody-cps').html(`<tr><td colspan="${readonly?2:3}" class="text-center text-muted">Sin CPs</td></tr>`); return; }
     $('#tbody-cps').html(cps.map((cp, i) => `
       <tr>
-        <td><input class="form-control form-control-sm" ${readonly?'readonly':''} value="${cp.cp_codigo||cp.codigo||''}" data-cp="${i}" data-field="cp_codigo" placeholder="MS25008" style="width:120px"></td>
+        <td>
+          ${readonly ? `<code>${cp.cp_codigo||cp.codigo||''}</code> <small class="text-muted">${cp.cp_nombre||''}</small>` : `
+            <select class="form-select form-select-sm" data-cp="${i}" data-field="cp_id">
+              <option value="">Seleccionar CP</option>
+              ${(cpsDisponibles || []).map(opt => {
+                const selected = (cp.cp_id === opt.id || cp.cp_codigo === opt.codigo || cp.codigo === opt.codigo) ? 'selected' : '';
+                return `<option value="${opt.id}" data-codigo="${opt.codigo}" ${selected}>${opt.codigo} - ${opt.nombre || ''}</option>`;
+              }).join('')}
+            </select>
+          `}
+        </td>
         <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="1" value="${cp.monto_clp||''}" data-cp="${i}" data-field="monto_clp"></td>
         ${!readonly?`<td><button class="btn btn-sm btn-outline-danger" onclick="SolicitudesView._removeCP(${i})">×</button></td>`:''}
       </tr>`).join(''));
-    $('#tbody-cps input').on('change input', function() {
+    $('#tbody-cps input, #tbody-cps select').on('change input', function() {
       const i = Number($(this).data('cp'));
-      SolicitudesView._state.cps[i][$(this).data('field')] = $(this).val();
-      SolicitudesView._checkCPBalance();
+      const field = $(this).data('field');
+      SolicitudesView._state.cps[i][field] = $(this).val();
+      if (field === 'cp_id') {
+        SolicitudesView._state.cps[i].cp_codigo = $(this).find(':selected').data('codigo') || '';
+      }
+      SolicitudesView._recalcular();
     });
+    SolicitudesView._recalcular();
   },
 
   _removeCP(i) { SolicitudesView._state.cps.splice(i, 1); SolicitudesView._renderCPs(); SolicitudesView._checkCPBalance(); },
@@ -388,26 +403,11 @@ window.SolicitudesView = {
   _removeRec(i) { SolicitudesView._state.receptores.splice(i, 1); SolicitudesView._renderReceptores(); },
 
   _recalcular() {
-    const { items } = SolicitudesView._state;
-    const moneda = $('[name=moneda_base]').val() || 'CLP';
-    const ufValor = Number($('[name=uf_valor]').val()) || 0;
+    const { cps } = SolicitudesView._state;
     const empresaCod = $('[name=empresa_emisora]').val() || 'MAS_CONSULTORES';
     const empresa = AppConfig.empresasEmisoras.find(e => e.codigo === empresaCod) || AppConfig.empresasEmisoras[0];
 
-    let netoCLP = 0;
-    items.forEach((item, i) => {
-      const cant = Number(item.cantidad) || 1;
-      let sub = 0;
-      if (moneda === 'UF' && item.uf_unitaria && ufValor) {
-        sub = Math.round(Number(item.uf_unitaria) * cant * ufValor);
-      } else {
-        sub = Math.round((Number(item.clp_unitario) || 0) * cant);
-      }
-      item.subtotal_clp = sub;
-      netoCLP += sub;
-      $(`[data-item-subtotal="${i}"]`).text(Format.clp(sub));
-    });
-
+    const netoCLP = (cps || []).reduce((sum, cp) => sum + (Number(cp.monto_clp) || 0), 0);
     const ivaCLP = empresa.afectoIva ? Math.round(netoCLP * (empresa.ivaPct || 0.19)) : 0;
     const totalCLP = netoCLP + ivaCLP;
     SolicitudesView._lastNeto = netoCLP;
@@ -432,6 +432,7 @@ window.SolicitudesView = {
     if (estado === 'Emitida') btns += '<button class="btn btn-success" id="btn-facturada">Marcar Facturada</button><button class="btn btn-danger" id="btn-anular">Anular</button><button class="btn btn-outline-success" id="btn-exportar">Exportar XLSX</button>';
     if (['Facturada','Cerrada','Emitida'].includes(estado)) btns += '';
     if (sol) btns += '<button class="btn btn-outline-secondary" id="btn-duplicar">Duplicar</button>';
+    if (sol) btns += '<button class="btn btn-outline-danger" id="btn-eliminar-solicitud"><i class="bi bi-trash"></i> Eliminar solicitud</button>';
 
     $('#botones-estado').html(btns);
     SolicitudesView._wireButtons();
@@ -515,11 +516,30 @@ window.SolicitudesView = {
         location.hash = '#/solicitudes/' + s.id;
       }).fail(e => UI.toast(e.message, 'danger'));
     });
+
+    $('#btn-eliminar-solicitud').on('click', () => {
+      SolicitudesView._confirmDelete(sol.id).then(deleted => {
+        if (deleted) location.hash = '#/solicitudes';
+      });
+    });
+  },
+
+  _confirmDelete(id) {
+    return UI.confirm('¿Seguro que deseas eliminar esta solicitud?', 'Eliminar solicitud').then(ok => {
+      if (!ok) return false;
+      return SolicitudesService.delete(id).then(() => {
+        UI.toast('Solicitud eliminada correctamente', 'success');
+        return true;
+      }, e => {
+        UI.toast(e.message || 'Error al eliminar solicitud', 'danger');
+        return false;
+      });
+    });
   },
 
   _collectForm() {
     const val = n => $(`[name=${n}]`).val();
-    const { items, cps, receptores } = SolicitudesView._state;
+    const { cps, receptores } = SolicitudesView._state;
 
     return {
       empresa_emisora: val('empresa_emisora') || 'MAS_CONSULTORES',
@@ -527,6 +547,7 @@ window.SolicitudesView = {
       periodo: val('periodo'),
       cliente_id: val('cliente_id') || $('#sel-cliente').val(),
       oc_numero: val('oc_numero') || null,
+      contrato_numero: val('contrato_numero') || null,
       hes_numero: val('hes_numero') || null,
       glosa: val('glosa'),
       area: val('area') || null,
@@ -534,21 +555,15 @@ window.SolicitudesView = {
       uf_fecha: val('uf_fecha') || null,
       uf_valor: val('uf_valor') ? Number(val('uf_valor')) : null,
       observaciones: val('observaciones') || null,
-      items: items.map(item => ({
-        descripcion: item.descripcion || '',
-        codigo_ref: item.codigo_ref || null,
-        cantidad: Number(item.cantidad) || 1,
-        uf_unitaria: item.uf_unitaria ? Number(item.uf_unitaria) : null,
-        clp_unitario: item.clp_unitario ? Number(item.clp_unitario) : null
-      })),
       cps: cps.map(cp => ({
+        cp_id: cp.cp_id || null,
         cp_codigo: cp.cp_codigo || cp.codigo || '',
         monto_clp: Number(cp.monto_clp) || 0
-      })).filter(cp => cp.cp_codigo),
+      })).filter(cp => cp.cp_id || cp.cp_codigo),
       receptores: receptores.map(r => ({ receptor_id: r.id || r.receptor_id })).filter(r => r.receptor_id)
     };
   },
 
-  _state: { sol: null, readonly: false, items: [], cps: [], receptores: [], clienteActual: null },
+  _state: { sol: null, readonly: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [] },
   _lastNeto: 0
 };

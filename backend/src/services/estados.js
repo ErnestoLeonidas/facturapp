@@ -24,7 +24,7 @@ function transicionValida(desde, hacia) {
 }
 
 function cambiarEstado(solicitudId, hacia, usuario = 'sistema', comentario = '') {
-  const sol = db.prepare('SELECT estado FROM solicitud_factura WHERE id = ?').get(solicitudId);
+  const sol = db.prepare('SELECT estado FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(solicitudId);
   if (!sol) throw Object.assign(new Error('Solicitud no encontrada'), { code: 'NOT_FOUND' });
 
   const desde = sol.estado;

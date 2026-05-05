@@ -56,6 +56,7 @@ Personas del cliente que reciben el documento.
 | `id` | uuid PK | |
 | `codigo` | text NOT NULL UNIQUE | "MS25008" |
 | `nombre` | text | "Plataforma Nutrir Soprole" |
+| `tipo_cp` | text CHECK (`Administración y Operación`, `Construcción`, `Horas de Desarrollo`) | clasificación del CP |
 | `area` | text | "MAS Plataformas" |
 | `cliente_id` | uuid FK → cliente (nullable) | |
 | `activo` | boolean DEFAULT true | |
@@ -241,6 +242,43 @@ Carga de tiempo del desarrollador sobre una solicitud adicional.
 | `definicion_layout` | jsonb | layout declarativo (celdas, estilos) |
 | `vigente_desde` | date | |
 | `vigente_hasta` | date | nullable |
+
+## Importacion desde Google Sheets
+
+La fuente `base_facturacion` viene desde:
+
+`https://docs.google.com/spreadsheets/d/1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0/edit?usp=sharing`
+
+Columnas de entrada: `id`, `cliente_id`, `cliente`, `codigo`, `nombre`,
+`tipo_cp`, `tipo_impuesto`, `mes`, `anio`, `monto_uf`, `moneda`, `estado`,
+`observaciones`, `fecha_estimada_facturacion`.
+
+Mapeo recomendado:
+
+| Columna sheet | Destino | Nota |
+|---|---|---|
+| `id` | `solicitud_programada.payload_base.source_row_id` o tabla staging | Mantener para upsert/idempotencia |
+| `cliente_id` | `cliente.id_externo` o `payload_base.cliente_id_externo` | Si no existe columna fisica, guardar en staging/payload |
+| `cliente` | `cliente.nombre_corto` | Crear/actualizar maestro |
+| `codigo` | `cp.codigo` y `solicitud_item.codigo_ref` | Codigo MS/CP asociado |
+| `nombre` | `cp.nombre`, `producto.nombre` y `solicitud_item.descripcion` | Nombre del CP, proyecto o servicio facturable |
+| `tipo_cp` | `cp.tipo_cp` | Normalizar valores antes de validar CHECK |
+| `tipo_impuesto` | `solicitud_factura.empresa_emisora` / regla IVA en payload | Define afecto/exento; confirmar catalogo |
+| `mes` + `anio` | `solicitud_factura.periodo` | Formato `YYYY-MM`; si falta `mes`, dejar `periodo = null` |
+| `monto_uf` | `solicitud_item.uf_unitaria` | Nullable; requiere completar antes de emitir |
+| `moneda` | `solicitud_factura.moneda_base` | Esperado `UF` o `CLP` |
+| `estado` | `solicitud_factura.estado` | Nullable; usar default interno si viene vacio |
+| `observaciones` | `solicitud_factura.observaciones` | Nullable |
+| `fecha_estimada_facturacion` | `solicitud_programada.proxima_generacion` o campo staging | Nullable; no reemplaza `fecha_facturacion` real |
+
+Los campos `mes`, `monto_uf`, `estado`, `observaciones` y
+`fecha_estimada_facturacion` pueden venir vacios. La importacion debe aceptar
+esas celdas como `null` y registrar alertas de completitud solo cuando bloqueen
+la emision o exportacion.
+
+La planilla no incluye area del CP por empresa. Para `cp.area`, usar `null`
+en la importacion inicial o completar desde un catalogo interno cuando negocio
+lo defina.
 
 ## Índices recomendados
 

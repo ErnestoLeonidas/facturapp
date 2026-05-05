@@ -138,13 +138,23 @@ window.ClientesView = {
                 Centros de Proyecto
                 <button class="btn btn-sm btn-outline-primary" id="btn-add-cp">+ CP</button>
               </div>
-              <ul class="list-group list-group-flush">
-                ${(c.cps||[]).map(cp => `
-                  <li class="list-group-item d-flex justify-content-between">
-                    <code>${cp.codigo}</code>
-                    <span>${cp.nombre||''} ${cp.area?'<small class="text-muted">('+cp.area+')</small>':''}</span>
-                  </li>`).join('') || '<li class="list-group-item text-muted">Sin CPs</li>'}
-              </ul>
+              <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                  <thead><tr><th>Código</th><th>Nombre</th><th>Tipo CP</th><th class="text-end"></th></tr></thead>
+                  <tbody>
+                    ${(c.cps||[]).map(cp => `
+                      <tr>
+                        <td><code>${cp.codigo}</code></td>
+                        <td>${cp.nombre||'—'}</td>
+                        <td>${cp.tipo_cp||'—'}</td>
+                        <td class="text-end">
+                          <button class="btn btn-sm btn-outline-secondary" data-edit-cp="${cp.id}">Editar</button>
+                          <button class="btn btn-sm btn-outline-danger ms-1" data-delete-cp="${cp.id}">Eliminar</button>
+                        </td>
+                      </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">Sin CPs</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -201,16 +211,76 @@ window.ClientesView = {
         }
       });
 
-      $('#btn-add-cp').on('click', () => {
-        const codigo = prompt('Código CP (ej. MS25010):');
-        const nombre = prompt('Nombre del CP (opcional):');
-        if (codigo) {
-          Api.post('/cp', { codigo, nombre: nombre||null, cliente_id: c.id })
-            .then(() => { UI.toast('CP agregado','success'); ClientesView.detalle(params); })
-            .fail(e => UI.toast(e.message,'danger'));
-        }
+      $('#btn-add-cp').on('click', () => ClientesView._abrirModalCP(params, c, null));
+
+      $('[data-edit-cp]').on('click', function() {
+        const cp = (c.cps || []).find(x => x.id === $(this).data('edit-cp'));
+        if (cp) ClientesView._abrirModalCP(params, c, cp);
+      });
+
+      $('[data-delete-cp]').on('click', function() {
+        const cpId = $(this).data('delete-cp');
+        UI.confirm('¿Seguro que deseas eliminar este CP?', 'Eliminar CP').then(ok => {
+          if (!ok) return;
+          Api.del('/cp/' + cpId)
+            .then(() => { UI.toast('CP eliminado', 'success'); ClientesView.detalle(params); })
+            .fail(e => UI.toast(e.message || 'Error al eliminar CP', 'danger'));
+        });
       });
     }).fail(e => UI.error('#view-root', e));
+  },
+
+  _abrirModalCP(params, cliente, cp) {
+    const tipos = ['Administración y Operación', 'Construcción', 'Horas de Desarrollo'];
+    const isEdit = !!cp;
+    const tipoActual = (cp && cp.tipo_cp) || tipos[0];
+    const $modal = $(`<div class="modal fade" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+        <h5>${isEdit ? 'Editar CP' : 'Nuevo CP'}</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label">Código *</label>
+            <input class="form-control" name="cp_codigo" value="${cp ? cp.codigo || '' : ''}" placeholder="MS25010">
+          </div>
+          <div class="col-md-7">
+            <label class="form-label">Nombre *</label>
+            <input class="form-control" name="cp_nombre" value="${cp ? cp.nombre || '' : ''}">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Tipo CP *</label>
+            <select class="form-select" name="cp_tipo">
+              ${tipos.map(t => `<option value="${t}" ${t === tipoActual ? 'selected' : ''}>${t}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnSaveCP">Guardar</button>
+      </div>
+    </div></div></div>`);
+    $('body').append($modal);
+    const modal = new bootstrap.Modal($modal[0]);
+    modal.show();
+
+    $modal.find('#btnSaveCP').on('click', () => {
+      const payload = {
+        codigo: $modal.find('[name=cp_codigo]').val(),
+        nombre: $modal.find('[name=cp_nombre]').val(),
+        tipo_cp: $modal.find('[name=cp_tipo]').val(),
+        cliente_id: cliente.id
+      };
+      const req = isEdit ? Api.patch('/cp/' + cp.id, payload) : Api.post('/cp', payload);
+      req.then(() => {
+        modal.hide();
+        UI.toast('CP guardado', 'success');
+        ClientesView.detalle(params);
+      }).fail(e => UI.toast(e.message || 'Error al guardar CP', 'danger'));
+    });
+    $modal.on('hidden.bs.modal', () => $modal.remove());
   },
 
   _renderForm(target, c) {
@@ -234,6 +304,12 @@ window.ClientesView = {
             ${['Activo','En espera','Inactivo'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
           </select>
         </div>
+        <div class="col-md-6">
+          <label class="form-label">Coordinador</label>
+          <select class="form-select" name="coordinador_id">
+            <option value="">Seleccionar Coordinador</option>
+          </select>
+        </div>
         <div class="col-12">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" name="requiere_hes" id="chkHes" ${c.requiere_hes?'checked':''}>
@@ -243,6 +319,17 @@ window.ClientesView = {
         <div class="col-12"><label class="form-label">Notas</label><textarea class="form-control" name="notas" rows="2">${c.notas||''}</textarea></div>
       </div>
     `);
+
+    const selectedCoord = c.coordinador_id || (c.coordinador && c.coordinador.id) || '';
+    CoordinadoresService.list().then(coords => {
+      const options = coords
+        .filter(coord => coord.activo || coord.id === selectedCoord)
+        .map(coord => `<option value="${coord.id}" ${coord.id === selectedCoord ? 'selected' : ''}>${coord.nombre}${coord.activo ? '' : ' (Inactivo)'}</option>`)
+        .join('');
+      $(target).find('[name=coordinador_id]').append(options);
+    }).fail(() => {
+      $(target).find('[name=coordinador_id]').append('<option value="" disabled>No se pudieron cargar coordinadores</option>');
+    });
   },
 
   _collectForm(target) {
@@ -257,6 +344,7 @@ window.ClientesView = {
       frecuencia: val('frecuencia'),
       dia_facturacion: val('dia_facturacion') ? Number(val('dia_facturacion')) : null,
       estado: val('estado'),
+      coordinador_id: val('coordinador_id') || null,
       requiere_hes: $f.find('[name=requiere_hes]').is(':checked'),
       notas: val('notas') || null
     };

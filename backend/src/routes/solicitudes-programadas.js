@@ -46,7 +46,7 @@ r.post('/:id/generar', (req, res) => {
   const periodo = req.query.periodo || req.body.periodo;
   if (!periodo || !/^\d{4}-\d{2}$/.test(periodo)) return fail(res, 'VALIDATION_ERROR', 'periodo debe ser YYYY-MM');
 
-  const existente = db.prepare('SELECT id FROM solicitud_factura WHERE programada_id=? AND periodo=?').get(prog.id, periodo);
+  const existente = db.prepare('SELECT id FROM solicitud_factura WHERE programada_id=? AND periodo=? AND is_delete = 0').get(prog.id, periodo);
   if (existente) return fail(res, 'VALIDATION_ERROR', `Ya existe solicitud para ${periodo} de esta plantilla`);
 
   const payload = prog.payload_base ? JSON.parse(prog.payload_base) : {};

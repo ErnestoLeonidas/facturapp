@@ -7,6 +7,7 @@ $(function () {
   Router.on('/recurrentes',              () => RecurrentesView.list());
   Router.on('/clientes',                 () => ClientesView.list());
   Router.on('/clientes/:id',             (p) => ClientesView.detalle(p));
+  Router.on('/coordinadores',            () => CoordinadoresView.list());
   Router.on('/desarrolladores',          () => DesarrolladoresView.list());
   Router.on('/desarrolladores/:id',      (p) => DesarrolladoresView.detalle(p));
   Router.on('/reportes',                 () => ReportesView.index());

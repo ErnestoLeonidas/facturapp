@@ -12,12 +12,15 @@ window.Router = (function () {
   }
 
   function resolve() {
-    const hash = (location.hash || '#/dashboard').replace(/^#/, '');
+    const rawHash = (location.hash || '#/dashboard').replace(/^#/, '');
+    const [hash, queryString] = rawHash.split('?');
+    const query = Object.fromEntries(new URLSearchParams(queryString || ''));
     for (const r of routes) {
       const m = hash.match(r.re);
       if (m) {
         const params = {};
         r.names.forEach((n, i) => params[n] = decodeURIComponent(m[i + 1]));
+        Object.assign(params, query);
         document.querySelectorAll('#main-nav .nav-link').forEach(a => {
           a.classList.toggle('active', a.getAttribute('href') === '#' + hash.split('/').slice(0,2).join('/'));
         });

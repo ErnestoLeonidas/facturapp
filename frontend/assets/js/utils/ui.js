@@ -26,6 +26,40 @@ window.UI = {
     new bootstrap.Toast($t[0], { delay: 3500 }).show();
   },
 
+  confirm(message, title) {
+    const id = 'confirm-' + Date.now();
+    const $modal = $(`
+      <div class="modal fade" id="${id}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">${title || 'Confirmar'}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">${message}</div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="button" class="btn btn-danger" data-confirm-ok>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+    const deferred = $.Deferred();
+    $('body').append($modal);
+    const modal = new bootstrap.Modal($modal[0]);
+    $modal.find('[data-confirm-ok]').on('click', () => {
+      deferred.resolve(true);
+      modal.hide();
+    });
+    $modal.on('hidden.bs.modal', () => {
+      if (deferred.state() === 'pending') deferred.resolve(false);
+      $modal.remove();
+    });
+    modal.show();
+    return deferred.promise();
+  },
+
   estadoChip(estado) {
     return '<span class="estado-chip estado-' + estado + '">' + estado + '</span>';
   }

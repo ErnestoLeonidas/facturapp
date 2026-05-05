@@ -10,7 +10,7 @@ r.get('/clientes', (req, res) => {
       COALESCE(SUM(CASE WHEN sf.tipo='mensual' THEN sf.monto_neto_clp ELSE 0 END),0) as recurrente_clp,
       COALESCE(SUM(CASE WHEN sf.tipo='adicional' THEN sf.monto_neto_clp ELSE 0 END),0) as adicional_clp
     FROM cliente c
-    LEFT JOIN solicitud_factura sf ON sf.cliente_id = c.id
+    LEFT JOIN solicitud_factura sf ON sf.cliente_id = c.id AND sf.is_delete = 0
     WHERE c.estado = 'Activo'
     GROUP BY c.id ORDER BY facturado_clp DESC
   `).all();
@@ -26,7 +26,7 @@ r.get('/clientes/:id', (req, res) => {
     SUM(CASE WHEN tipo='mensual' THEN monto_neto_clp ELSE 0 END) as recurrente,
     SUM(CASE WHEN tipo='adicional' THEN monto_neto_clp ELSE 0 END) as adicional,
     COUNT(*) as solicitudes
-    FROM solicitud_factura WHERE cliente_id=?`;
+    FROM solicitud_factura WHERE cliente_id=? AND is_delete = 0`;
   const vals = [req.params.id];
   if (periodoDesde) { sql += ' AND periodo >= ?'; vals.push(periodoDesde); }
   if (periodoHasta) { sql += ' AND periodo <= ?'; vals.push(periodoHasta); }
@@ -39,7 +39,7 @@ r.get('/clientes/:id', (req, res) => {
 r.get('/gastos', (req, res) => {
   const { desde, hasta } = req.query;
   let sql = `SELECT periodo, SUM(monto_neto_clp) as neto, SUM(monto_iva_clp) as iva, COUNT(*) as solicitudes
-    FROM solicitud_factura WHERE estado IN ('Facturada','Cerrada','Emitida','Aprobada')`;
+    FROM solicitud_factura WHERE is_delete = 0 AND estado IN ('Facturada','Cerrada','Emitida','Aprobada')`;
   const vals = [];
   if (desde) { sql += ' AND periodo >= ?'; vals.push(desde); }
   if (hasta) { sql += ' AND periodo <= ?'; vals.push(hasta); }
@@ -54,7 +54,7 @@ r.get('/desarrolladores/:id', (req, res) => {
     FROM registro_tiempo rt
     JOIN solicitud_factura sf ON sf.id=rt.solicitud_id
     JOIN cliente c ON c.id=sf.cliente_id
-    WHERE rt.desarrollador_id=?`;
+    WHERE rt.desarrollador_id=? AND sf.is_delete = 0`;
   const vals = [req.params.id];
   if (desde) { sql += ' AND rt.fecha >= ?'; vals.push(desde); }
   if (hasta) { sql += ' AND rt.fecha <= ?'; vals.push(hasta); }

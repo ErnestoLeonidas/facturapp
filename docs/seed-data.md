@@ -1,7 +1,12 @@
 # Datos semilla iniciales
 
-Extraídos de `archivos/Base de Datos Bot Facturación.xlsx`. Estos datos
-alimentan el seeder de Fase 1 (`backend/seed/seed.json`).
+Extraidos inicialmente de `archivos/Base de Datos Bot Facturacion.xlsx`.
+La fuente operativa vigente para completar/actualizar el seed es la planilla
+Google Sheets:
+
+`https://docs.google.com/spreadsheets/d/1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0/edit?usp=sharing`
+
+Estos datos alimentan el seeder de Fase 1 (`backend/seed/seed.json`).
 
 ## Coordinadores conocidos
 
@@ -78,7 +83,29 @@ Conocidas:
 - MAS Plataformas
 - MAS Capacitación
 
-(Catálogo a confirmar con negocio.)
+(Catalogo a confirmar con negocio.)
+
+## Base facturacion Google Sheets
+
+Columnas disponibles: `id`, `cliente_id`, `cliente`, `codigo`, `nombre`,
+`tipo_cp`, `tipo_impuesto`, `mes`, `anio`, `monto_uf`, `moneda`, `estado`,
+`observaciones`, `fecha_estimada_facturacion`.
+
+Campos que pueden venir vacios y deben tolerarse en el seed/importador:
+`mes`, `monto_uf`, `estado`, `observaciones` y
+`fecha_estimada_facturacion`.
+
+Uso para seed:
+
+- `cliente_id` + `cliente` crean/actualizan clientes.
+- `codigo` + `nombre` + `tipo_cp` crean/actualizan CPs.
+- `nombre` puede crear/actualizar catalogo de productos cuando represente un
+  servicio facturable.
+- `tipo_impuesto`, `moneda` y `monto_uf` alimentan la base de solicitudes o
+  plantillas recurrentes.
+- `anio` y `mes`, cuando ambos existen, forman el periodo `YYYY-MM`.
+- El area del CP no viene en esta planilla; dejarla vacia o completarla desde
+  un catalogo interno posterior.
 
 ## Plantilla del seed
 

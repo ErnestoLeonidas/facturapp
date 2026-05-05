@@ -10,7 +10,7 @@ const EXPORT_DIR = path.join(__dirname, '..', '..', 'storage', 'exports');
 if (!fs.existsSync(EXPORT_DIR)) fs.mkdirSync(EXPORT_DIR, { recursive: true });
 
 r.post('/solicitud/:id', async (req, res, next) => {
-  const sol = db.prepare('SELECT estado, folio FROM solicitud_factura WHERE id=?').get(req.params.id);
+  const sol = db.prepare('SELECT estado, folio FROM solicitud_factura WHERE id=? AND is_delete = 0').get(req.params.id);
   if (!sol) return notFound(res);
   if (!['Aprobada','Emitida','Facturada','Cerrada'].includes(sol.estado))
     return fail(res, 'VALIDATION_ERROR', `Solo se puede exportar desde estado Aprobada. Estado actual: ${sol.estado}`);

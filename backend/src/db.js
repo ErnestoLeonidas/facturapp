@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS cp (
   id TEXT PRIMARY KEY,
   codigo TEXT NOT NULL UNIQUE,
   nombre TEXT,
+  tipo_cp TEXT,
   area TEXT,
   cliente_id TEXT REFERENCES cliente(id),
   activo INTEGER NOT NULL DEFAULT 1,
@@ -75,6 +76,18 @@ CREATE TABLE IF NOT EXISTS producto (
   categoria TEXT,
   activo INTEGER NOT NULL DEFAULT 1,
   created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS cliente_producto (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL REFERENCES cliente(id),
+  producto_id TEXT NOT NULL REFERENCES producto(id),
+  vigencia_desde TEXT,
+  vigencia_hasta TEXT,
+  condiciones TEXT,
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(cliente_id, producto_id)
 );
 
 CREATE TABLE IF NOT EXISTS desarrollador (
@@ -109,6 +122,7 @@ CREATE TABLE IF NOT EXISTS solicitud_factura (
   monto_total_clp REAL DEFAULT 0,
   observaciones TEXT,
   estado TEXT NOT NULL DEFAULT 'Borrador',
+  is_delete INTEGER NOT NULL DEFAULT 0,
   version_plantilla TEXT DEFAULT 'v1',
   programada_id TEXT,
   created_at TEXT DEFAULT (datetime('now')),
@@ -198,11 +212,34 @@ CREATE TABLE IF NOT EXISTS documento_exportado (
   generado_por TEXT
 );
 
+CREATE TABLE IF NOT EXISTS version_plantilla (
+  id TEXT PRIMARY KEY,
+  descripcion TEXT,
+  definicion_layout TEXT,
+  ruta TEXT,
+  vigente_desde TEXT,
+  vigente_hasta TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS uf_cache (
   fecha TEXT PRIMARY KEY,
   valor REAL NOT NULL,
   source TEXT DEFAULT 'mindicador.cl',
   obtenido_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS bitacora_integracion (
+  id TEXT PRIMARY KEY,
+  integracion TEXT NOT NULL,
+  dataset TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  mensaje TEXT,
+  filas_leidas INTEGER DEFAULT 0,
+  filas_procesadas INTEGER DEFAULT 0,
+  detalles TEXT,
+  iniciado_at TEXT DEFAULT (datetime('now')),
+  finalizado_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sol_cliente ON solicitud_factura(cliente_id, periodo);
@@ -211,7 +248,19 @@ CREATE INDEX IF NOT EXISTS idx_sol_fecha ON solicitud_factura(fecha_solicitud DE
 CREATE INDEX IF NOT EXISTS idx_hist_sol ON historial_estado(solicitud_id, fecha DESC);
 CREATE INDEX IF NOT EXISTS idx_receptor_cli ON receptor(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_cp_cli ON cp(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_bitacora_integracion ON bitacora_integracion(integracion, dataset, iniciado_at DESC);
 `);
+
+const solicitudColumns = db.prepare("PRAGMA table_info('solicitud_factura')").all().map(col => col.name);
+if (!solicitudColumns.includes('is_delete')) {
+  db.exec("ALTER TABLE solicitud_factura ADD COLUMN is_delete INTEGER NOT NULL DEFAULT 0;");
+}
+db.exec("CREATE INDEX IF NOT EXISTS idx_sol_is_delete ON solicitud_factura(is_delete);");
+
+const cpColumns = db.prepare("PRAGMA table_info('cp')").all().map(col => col.name);
+if (!cpColumns.includes('tipo_cp')) {
+  db.exec("ALTER TABLE cp ADD COLUMN tipo_cp TEXT;");
+}
 
 // Helper: wrap a function in BEGIN/COMMIT/ROLLBACK
 db.transaction = function(fn) {

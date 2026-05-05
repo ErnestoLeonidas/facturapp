@@ -227,3 +227,158 @@ window.ConfiguracionView = {
     });
   }
 };
+
+window.ConfiguracionView = {
+  render() {
+    UI.setTitle('Configuracion e integraciones');
+    const hoy = new Date().toISOString().slice(0,10);
+    $('#view-root').html(`
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-header">UF</div>
+            <div class="card-body">
+              <p class="small text-muted">Fuente: mindicador.cl (cache por fecha)</p>
+              <div class="input-group input-group-sm mb-2">
+                <input class="form-control" type="date" id="uf-test-fecha" value="${hoy}">
+                <button class="btn btn-outline-primary" id="btn-test-uf">Consultar</button>
+              </div>
+              <div id="uf-result"></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-header">Google Sheets</div>
+            <div class="card-body" id="sheets-estado">
+              <em class="text-muted small">Cargando estado...</em>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card">
+            <div class="card-header">Google Drive</div>
+            <div class="card-body" id="drive-estado">
+              <em class="text-muted small">Cargando plantilla...</em>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header">Bitacora de integraciones</div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                  <thead><tr><th>Fecha</th><th>Integracion</th><th>Dataset</th><th>Estado</th><th>Filas</th><th>Mensaje</th></tr></thead>
+                  <tbody id="tbl-bitacora"><tr><td colspan="6" class="text-muted text-center py-3">Cargando...</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    IntegracionesService.estadoSheets().then(d => {
+      $('#sheets-estado').html(`
+        <p class="small mb-1"><strong>Service Account:</strong> ${d.configured ? 'configurado' : 'pendiente'}</p>
+        <p class="small text-muted mb-2">${d.baseFacturacionId}<br>${d.baseFacturacionRange}</p>
+        <div class="d-grid gap-1">
+          <button class="btn btn-sm btn-outline-primary" id="btn-sync-base">Sync base facturacion</button>
+          <button class="btn btn-sm btn-outline-success" id="btn-import-base-excel">Importar Excel base</button>
+          <button class="btn btn-sm btn-outline-success" id="btn-import-master-excel">Importar master</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-sync-proy">Sync proyecciones</button>
+        </div>`);
+      $('#btn-sync-base').on('click', () => ConfiguracionView._syncSheets('base_facturacion'));
+      $('#btn-import-base-excel').on('click', () => ConfiguracionView._importBaseExcel());
+      $('#btn-import-master-excel').on('click', () => ConfiguracionView._importMasterExcel());
+      $('#btn-sync-proy').on('click', () => ConfiguracionView._syncSheets('proyecciones'));
+    }).fail(() => $('#sheets-estado').html('<small class="text-danger">No disponible</small>'));
+
+    IntegracionesService.plantillaDrive().then(d => {
+      $('#drive-estado').html(`
+        <p class="small mb-1"><strong>${d.name}</strong></p>
+        <p class="small text-muted mb-2">${d.modifiedTime || ''}</p>
+        <button class="btn btn-sm btn-outline-primary" id="btn-sync-drive">Sincronizar plantilla</button>`);
+      $('#btn-sync-drive').on('click', () => {
+        IntegracionesService.syncPlantillaDrive()
+          .then(d => {
+            UI.toast('Plantilla sincronizada', 'success');
+            $('#drive-estado').append(`<small class="text-muted d-block mt-2">${d.ruta || 'OK'}</small>`);
+            ConfiguracionView._cargarBitacora();
+          })
+          .fail(e => {
+            UI.toast(e.message, 'warning');
+            ConfiguracionView._cargarBitacora();
+          });
+      });
+    }).fail(e => $('#drive-estado').html(`<small class="text-warning">${e.message}</small>`));
+
+    ConfiguracionView._cargarBitacora();
+
+    $('#btn-test-uf').on('click', () => {
+      const f = $('#uf-test-fecha').val();
+      IntegracionesService.uf(f).then(d => {
+        $('#uf-result').html(`<span class="badge bg-success">UF ${d.fecha}: $${d.valor.toLocaleString('es-CL')}</span>
+          <small class="text-muted d-block">${d.cached ? 'Desde cache' : 'Obtenida ahora'}</small>`);
+      }).fail(e => $('#uf-result').html(`<span class="badge bg-danger">${e.message}</span>`));
+    });
+  },
+
+  _syncSheets(dataset) {
+    UI.toast('Sincronizando ' + dataset + '...', 'info');
+    IntegracionesService.syncSheets(dataset)
+      .then(d => {
+        UI.toast(`Sync OK: ${d.filas_procesadas}/${d.filas_leidas} filas`, 'success');
+        ConfiguracionView._cargarBitacora();
+      })
+      .fail(e => {
+        UI.toast(e.message, 'warning');
+        ConfiguracionView._cargarBitacora();
+      });
+  },
+
+  _importBaseExcel() {
+    UI.toast('Importando Excel base...', 'info');
+    IntegracionesService.importBaseExcel('public-google-sheet')
+      .then(d => {
+        UI.toast(`Import OK: ${d.filas_procesadas}/${d.filas_leidas} filas`, 'success');
+        ConfiguracionView._cargarBitacora();
+      })
+      .fail(e => {
+        UI.toast(e.message, 'warning');
+        ConfiguracionView._cargarBitacora();
+      });
+  },
+
+  _importMasterExcel() {
+    UI.toast('Importando master...', 'info');
+    IntegracionesService.importMasterExcel()
+      .then(d => {
+        UI.toast(`Master OK: ${d.filas_procesadas}/${d.filas_leidas} filas`, 'success');
+        ConfiguracionView._cargarBitacora();
+      })
+      .fail(e => {
+        UI.toast(e.message, 'warning');
+        ConfiguracionView._cargarBitacora();
+      });
+  },
+
+  _cargarBitacora() {
+    IntegracionesService.bitacora(20).then(rows => {
+      if (!rows.length) {
+        $('#tbl-bitacora').html('<tr><td colspan="6" class="text-muted text-center py-3">Sin eventos</td></tr>');
+        return;
+      }
+      $('#tbl-bitacora').html(rows.map(r => `
+        <tr>
+          <td><small>${r.iniciado_at || ''}</small></td>
+          <td>${r.integracion}</td>
+          <td>${r.dataset}</td>
+          <td><span class="badge ${r.estado === 'OK' ? 'bg-success' : r.estado === 'Error' ? 'bg-danger' : 'bg-secondary'}">${r.estado}</span></td>
+          <td>${r.filas_procesadas || 0}/${r.filas_leidas || 0}</td>
+          <td><small>${r.mensaje || ''}</small></td>
+        </tr>`).join(''));
+    }).fail(() => $('#tbl-bitacora').html('<tr><td colspan="6" class="text-danger text-center py-3">No disponible</td></tr>'));
+  }
+};
