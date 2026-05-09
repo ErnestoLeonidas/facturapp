@@ -6,7 +6,7 @@ r.get('/clientes', (req, res) => {
   const rows = db.prepare(`
     SELECT c.id, c.nombre_corto, c.razon_social,
       COUNT(sf.id) as total_solicitudes,
-      COALESCE(SUM(CASE WHEN sf.estado IN ('Facturada','Cerrada','Emitida') THEN sf.monto_neto_clp ELSE 0 END),0) as facturado_clp,
+      COALESCE(SUM(CASE WHEN sf.estado IN ('FACTURADO','Facturada','Cerrada','Emitida') THEN sf.monto_neto_clp ELSE 0 END),0) as facturado_clp,
       COALESCE(SUM(CASE WHEN sf.tipo='mensual' THEN sf.monto_neto_clp ELSE 0 END),0) as recurrente_clp,
       COALESCE(SUM(CASE WHEN sf.tipo='adicional' THEN sf.monto_neto_clp ELSE 0 END),0) as adicional_clp
     FROM cliente c
@@ -39,7 +39,7 @@ r.get('/clientes/:id', (req, res) => {
 r.get('/gastos', (req, res) => {
   const { desde, hasta } = req.query;
   let sql = `SELECT periodo, SUM(monto_neto_clp) as neto, SUM(monto_iva_clp) as iva, COUNT(*) as solicitudes
-    FROM solicitud_factura WHERE is_delete = 0 AND estado IN ('Facturada','Cerrada','Emitida','Aprobada')`;
+    FROM solicitud_factura WHERE is_delete = 0 AND estado IN ('FACTURA SOLICITADA','FACTURADO','Facturada','Cerrada','Emitida','Aprobada')`;
   const vals = [];
   if (desde) { sql += ' AND periodo >= ?'; vals.push(desde); }
   if (hasta) { sql += ' AND periodo <= ?'; vals.push(hasta); }

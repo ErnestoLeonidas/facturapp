@@ -60,7 +60,15 @@ window.UI = {
     return deferred.promise();
   },
 
+  estadoClass(estado) {
+    return 'estado-' + String(estado || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+  },
+
   estadoChip(estado) {
-    return '<span class="estado-chip estado-' + estado + '">' + estado + '</span>';
+    return '<span class="estado-chip ' + UI.estadoClass(estado) + '">' + estado + '</span>';
   }
 };

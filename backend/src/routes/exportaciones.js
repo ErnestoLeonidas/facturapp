@@ -9,15 +9,43 @@ const fs = require('fs');
 const EXPORT_DIR = path.join(__dirname, '..', '..', 'storage', 'exports');
 if (!fs.existsSync(EXPORT_DIR)) fs.mkdirSync(EXPORT_DIR, { recursive: true });
 
+const MESES = [
+  'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+  'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
+];
+
+function limpiarParteArchivo(valor) {
+  return String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase();
+}
+
+function nombreMesDesdePeriodo(periodo) {
+  const mes = Number(String(periodo || '').slice(5, 7));
+  return MESES[mes - 1] || limpiarParteArchivo(periodo) || 'SIN_MES';
+}
+
+function nombreArchivoSolicitud(sol) {
+  const cliente = limpiarParteArchivo(sol.cliente_nombre || 'CLIENTE');
+  const mes = nombreMesDesdePeriodo(sol.periodo);
+  return `Solicitud_factura_${cliente}_${mes}.xlsx`;
+}
+
 r.post('/solicitud/:id', async (req, res, next) => {
-  const sol = db.prepare('SELECT estado, folio FROM solicitud_factura WHERE id=? AND is_delete = 0').get(req.params.id);
+  const sol = db.prepare(`SELECT sf.estado, sf.folio, sf.periodo, c.nombre_corto as cliente_nombre
+    FROM solicitud_factura sf
+    JOIN cliente c ON c.id = sf.cliente_id
+    WHERE sf.id=? AND sf.is_delete = 0`).get(req.params.id);
   if (!sol) return notFound(res);
-  if (!['Aprobada','Emitida','Facturada','Cerrada'].includes(sol.estado))
-    return fail(res, 'VALIDATION_ERROR', `Solo se puede exportar desde estado Aprobada. Estado actual: ${sol.estado}`);
+  if (!['FACTURA SOLICITADA','FACTURADO','Aprobada','Emitida','Facturada','Cerrada'].includes(sol.estado))
+    return fail(res, 'VALIDATION_ERROR', `Solo se puede exportar desde estado FACTURA SOLICITADA o superior. Estado actual: ${sol.estado}`);
 
   try {
     const buf = await generarSolicitudXLSX(req.params.id);
-    const filename = `${sol.folio}_${Date.now()}.xlsx`;
+    const filename = nombreArchivoSolicitud(sol);
     const filepath = path.join(EXPORT_DIR, filename);
     fs.writeFileSync(filepath, buf);
 

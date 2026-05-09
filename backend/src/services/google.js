@@ -2,7 +2,7 @@ const path = require('path');
 const { google } = require('googleapis');
 
 const SCOPES = [
-  'https://www.googleapis.com/auth/spreadsheets.readonly',
+  'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/drive.readonly'
 ];
 

@@ -143,6 +143,7 @@ npm start          # http://localhost:3000
 - [x] Upsert de clientes, CPs asociados a cliente, productos y `cliente_producto`.
 - [x] Bitácora `bitacora_integracion` con estado, filas leídas/procesadas y detalles.
 - [x] Endpoints Drive para listar plantilla, leer metadata y exportar/descargar plantilla viva.
+- [x] `BASE_FACTURACION_MASTER` configurada para refresh/push con `GOOGLE_SHEETS_MASTER_FACTURACION_ID=1es6Jk8hmqwz7gcrz84jI_u8dDvfO2l9W5W5g9sf-wF4`.
 - [ ] Configurar `GOOGLE_SA_JSON_PATH` real y compartir la planilla/plantilla con el `client_email`.
 - [ ] Definir/confirmar columnas de `proyecciones` para mapearlas a reportes.
 

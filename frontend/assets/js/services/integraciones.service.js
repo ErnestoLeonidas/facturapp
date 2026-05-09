@@ -3,6 +3,8 @@ window.IntegracionesService = {
   syncSheets(dataset)        { return Api.post('/integraciones/google-sheets/sync?dataset=' + encodeURIComponent(dataset)); },
   importBaseExcel(source)    { return Api.post('/integraciones/excel/base-facturacion/import?source=' + encodeURIComponent(source || 'public-google-sheet')); },
   importMasterExcel()        { return Api.post('/integraciones/excel/master-facturacion/import'); },
+  refreshMasterSheets()      { return Api.post('/integraciones/google-sheets/master-facturacion/refresh'); },
+  pushMasterSheets()         { return Api.post('/integraciones/google-sheets/master-facturacion/push'); },
   estadoSheets()             { return Api.get('/integraciones/google-sheets/estado'); },
   bitacora(limit)            { return Api.get('/integraciones/bitacora?limit=' + (limit || 20)); },
   plantillaDrive()           { return Api.get('/integraciones/google-drive/plantilla'); },

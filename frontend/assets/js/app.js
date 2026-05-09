@@ -4,7 +4,7 @@ $(function () {
   Router.on('/solicitudes',              () => SolicitudesView.list());
   Router.on('/solicitudes/nueva',        () => SolicitudesView.nueva());
   Router.on('/solicitudes/:id',          (p) => SolicitudesView.detalle(p));
-  Router.on('/recurrentes',              () => RecurrentesView.list());
+  Router.on('/calendario',               (p) => CalendarioView.render(p));
   Router.on('/clientes',                 () => ClientesView.list());
   Router.on('/clientes/:id',             (p) => ClientesView.detalle(p));
   Router.on('/coordinadores',            () => CoordinadoresView.list());

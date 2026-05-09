@@ -73,7 +73,7 @@ r.post('/:id/generar', (req, res) => {
 
   (payload.cps||[]).forEach((c, i) => {
     const cpRow = db.prepare('SELECT id FROM cp WHERE codigo=?').get(c.cp_codigo||c.cp_id);
-    if (cpRow) db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_clp, orden) VALUES (?,?,?,?,?)').run(uuidv4(), newId, cpRow.id, c.monto_clp||0, i);
+    if (cpRow) db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?,?,?,?,?,?)').run(uuidv4(), newId, cpRow.id, c.monto_uf||null, c.monto_clp||0, i);
   });
 
   (payload.receptores||[]).forEach(rec => {

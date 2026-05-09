@@ -2,7 +2,7 @@ const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { getClients } = require('./google');
 
-const DEFAULT_BASE_RANGE = 'A:N';
+const DEFAULT_BASE_RANGE = 'A:O';
 
 function clean(value) {
   if (value === undefined || value === null) return null;
@@ -115,6 +115,10 @@ function linkClienteProducto(clienteId, productoId, row) {
       condiciones = excluded.condiciones
   `).run(uuidv4(), clienteId, productoId, JSON.stringify({
     source: clean(row.source) || 'google_sheets_base_facturacion',
+    cliente: clean(row.cliente),
+    codigo: clean(row.codigo),
+    nombre: clean(row.nombre),
+    tipo_cp: clean(row.tipo_cp),
     tipo_impuesto: clean(row.tipo_impuesto),
     moneda: clean(row.moneda),
     monto_uf: parseNumber(row.monto_uf),
@@ -124,6 +128,64 @@ function linkClienteProducto(clienteId, productoId, row) {
     anio: clean(row.anio),
     mes: clean(row.mes)
   }));
+}
+
+function projectionId(row, clienteId) {
+  return clean(row.id) || [
+    clienteId,
+    clean(row.codigo),
+    clean(row.nombre),
+    clean(row.anio),
+    clean(row.mes),
+    clean(row.codigo_facturacion)
+  ].filter(Boolean).join('|') || uuidv4();
+}
+
+function upsertProyeccion(row, clienteId) {
+  if (!clienteId) return false;
+  const id = projectionId(row, clienteId);
+  db.prepare(`
+    INSERT INTO proyeccion_facturacion (
+      id, cliente_id, cliente, codigo, nombre, tipo_cp, tipo_impuesto, mes, anio,
+      monto_uf, moneda, estado, observaciones, fecha_estimada_facturacion, codigo_facturacion, source, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(id) DO UPDATE SET
+      cliente_id = excluded.cliente_id,
+      cliente = excluded.cliente,
+      codigo = excluded.codigo,
+      nombre = excluded.nombre,
+      tipo_cp = excluded.tipo_cp,
+      tipo_impuesto = excluded.tipo_impuesto,
+      mes = excluded.mes,
+      anio = excluded.anio,
+      monto_uf = excluded.monto_uf,
+      moneda = excluded.moneda,
+      estado = excluded.estado,
+      observaciones = excluded.observaciones,
+      fecha_estimada_facturacion = excluded.fecha_estimada_facturacion,
+      codigo_facturacion = excluded.codigo_facturacion,
+      source = excluded.source,
+      updated_at = datetime('now')
+  `).run(
+    id,
+    clienteId,
+    clean(row.cliente),
+    clean(row.codigo),
+    clean(row.nombre),
+    clean(row.tipo_cp),
+    clean(row.tipo_impuesto),
+    clean(row.mes),
+    Number(clean(row.anio)) || null,
+    parseNumber(row.monto_uf),
+    clean(row.moneda),
+    clean(row.estado),
+    clean(row.observaciones),
+    clean(row.fecha_estimada_facturacion),
+    clean(row.codigo_facturacion),
+    clean(row.source) || 'google_sheets_base_facturacion'
+  );
+  return true;
 }
 
 function upsertCP(row, clienteId) {
@@ -157,10 +219,12 @@ function applyBaseFacturacionRows(rows, source = 'google_sheets_base_facturacion
     clientes_creados_o_actualizados: 0,
     cps_creados_o_actualizados: 0,
     productos_creados_o_actualizados: 0,
+    proyecciones_creadas_o_actualizadas: 0,
     omitidas: []
   };
 
   const tx = db.transaction(() => {
+    db.prepare('DELETE FROM proyeccion_facturacion').run();
     rows.forEach((row, index) => {
       const missing = [];
       if (!clean(row.cliente)) missing.push('cliente');
@@ -177,6 +241,7 @@ function applyBaseFacturacionRows(rows, source = 'google_sheets_base_facturacion
 
       const cpId = upsertCP(row, clienteId);
       if (cpId) stats.cps_creados_o_actualizados += 1;
+      if (upsertProyeccion({ ...row, source }, clienteId)) stats.proyecciones_creadas_o_actualizadas += 1;
 
       const productoId = upsertProducto(row.nombre);
       if (productoId) {

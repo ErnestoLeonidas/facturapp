@@ -50,7 +50,7 @@ NOTAS:
 
 | Campo plantilla | Entidad / atributo |
 |---|---|
-| `Facturar Por` | `solicitud_factura.empresa_emisora` (`MAS_CONSULTORES` \| `MAS_CAPACITACION`) |
+| `Facturar Por` | `solicitud_factura.empresa_emisora` (`MAS_CONSULTORES` \| `MAS_CAPACITACIONES`) |
 | `Cliente` | `cliente.nombre_corto` (FK desde `solicitud_factura.cliente_id`) |
 | `Razón Social` | `cliente.razon_social` |
 | `RUT` | `cliente.rut` |
@@ -76,7 +76,7 @@ Si empresa_emisora = MAS_CONSULTORES → afecto IVA (19%):
     monto_iva_clp   = round(monto_neto_clp * 0.19)
     monto_total_clp = monto_neto_clp + monto_iva_clp
 
-Si empresa_emisora = MAS_CAPACITACION → exento:
+Si empresa_emisora = MAS_CAPACITACIONES → exento:
     monto_iva_clp   = 0
     monto_total_clp = monto_neto_clp
 

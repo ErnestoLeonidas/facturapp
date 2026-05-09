@@ -44,7 +44,7 @@ cache cambie.
 
 | Dataset | Origen | Operacion recomendada | Frecuencia |
 |---|---|---|---|
-| Base facturacion | Google Sheet `1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0` | `spreadsheets.values.get` sobre la pestana principal con rango `A:N` | Diaria + a demanda |
+| Base facturacion | Google Sheet `1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0` | `spreadsheets.values.get` sobre la pestana principal con rango `A:O` | Diaria + a demanda |
 | Clientes / CPs / servicios | Derivados de `base_facturacion` | Normalizar filas por `cliente_id`, `codigo` y `nombre` | Diaria + a demanda |
 | CPs / Areas | Hoja "Proyecciones" (a definir SpreadsheetId con negocio) | `batchGet` | Diaria |
 | Plantilla solicitud | Drive (`files.export` a `xlsx`) si vive como Google Sheet | A demanda | Manual |
@@ -105,7 +105,7 @@ Reglas de importacion:
   "spreadsheets": {
     "base_facturacion": {
       "id": "1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0",
-      "rango_facturacion": "A:N"
+      "rango_facturacion": "A:O"
     },
     "proyecciones": { "id": "<SHEET_ID>" }
   }

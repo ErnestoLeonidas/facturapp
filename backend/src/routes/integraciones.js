@@ -7,6 +7,7 @@ const integrationLog = require('../services/integrationLog');
 const { serviceAccountPath } = require('../services/google');
 const excelBaseFacturacion = require('../services/excelBaseFacturacion');
 const excelMasterFacturacion = require('../services/excelMasterFacturacion');
+const googleMasterFacturacion = require('../services/googleMasterFacturacion');
 
 function googleConfigured() {
   return !!process.env.GOOGLE_SA_JSON_PATH;
@@ -31,7 +32,8 @@ r.get('/google-sheets/estado', (req, res) => {
     configured: googleConfigured(),
     serviceAccountPath: serviceAccountPath(),
     baseFacturacionId: process.env.GOOGLE_SHEETS_BASE_FACTURACION_ID || '1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0',
-    baseFacturacionRange: process.env.GOOGLE_SHEETS_BASE_FACTURACION_RANGE || 'A:N',
+    baseFacturacionRange: process.env.GOOGLE_SHEETS_BASE_FACTURACION_RANGE || 'A:O',
+    masterFacturacionId: process.env.GOOGLE_SHEETS_MASTER_FACTURACION_ID || '1es6Jk8hmqwz7gcrz84jI_u8dDvfO2l9W5W5g9sf-wF4',
     proyeccionesId: process.env.GOOGLE_SHEETS_PROYECCIONES_ID || null,
     logs
   });
@@ -102,6 +104,48 @@ r.post('/excel/master-facturacion/import', async (req, res) => {
       detalles: { code: e.code, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined }
     });
     handleIntegrationError(res, e, 'MASTER_IMPORT_FAILED');
+  }
+});
+
+r.post('/google-sheets/master-facturacion/refresh', async (req, res) => {
+  const logId = integrationLog.start('google_sheets', 'base_facturacion_master_pull');
+
+  try {
+    const result = await googleMasterFacturacion.pullMasterFacturacion();
+    integrationLog.finish(logId, 'OK', {
+      mensaje: 'Refresh master desde Google Sheets completado',
+      filas_leidas: result.filas_leidas,
+      filas_procesadas: result.filas_procesadas,
+      detalles: result
+    });
+    ok(res, result);
+  } catch (e) {
+    integrationLog.finish(logId, 'Error', {
+      mensaje: e.message,
+      detalles: { code: e.code, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined }
+    });
+    handleIntegrationError(res, e, 'MASTER_REFRESH_FAILED');
+  }
+});
+
+r.post('/google-sheets/master-facturacion/push', async (req, res) => {
+  const logId = integrationLog.start('google_sheets', 'base_facturacion_master_push');
+
+  try {
+    const result = await googleMasterFacturacion.pushMasterFacturacion();
+    integrationLog.finish(logId, 'OK', {
+      mensaje: 'Master enviado a Google Sheets',
+      filas_leidas: result.filas_leidas,
+      filas_procesadas: result.filas_procesadas,
+      detalles: result
+    });
+    ok(res, result);
+  } catch (e) {
+    integrationLog.finish(logId, 'Error', {
+      mensaje: e.message,
+      detalles: { code: e.code, stack: process.env.NODE_ENV === 'development' ? e.stack : undefined }
+    });
+    handleIntegrationError(res, e, 'MASTER_PUSH_FAILED');
   }
 });
 

@@ -3,9 +3,11 @@ window.AppConfig = {
   defaultMoneda: 'CLP',
   empresasEmisoras: [
     { codigo: 'MAS_CONSULTORES',  nombre: 'MAS Consultores S.A.', afectoIva: true,  ivaPct: 0.19 },
-    { codigo: 'MAS_CAPACITACION', nombre: 'Más Capacitación',     afectoIva: false, ivaPct: 0    }
+    { codigo: 'MAS_CAPACITACIONES', nombre: 'Más Capacitación',     afectoIva: false, ivaPct: 0    }
   ],
+  estadosProyecciones: ['PENDIENTE OC / HES', 'FACTURA SOLICITADA', 'FACTURADO'],
   estadosSolicitud: [
+    'PENDIENTE OC / HES','FACTURA SOLICITADA','FACTURADO',
     'Borrador','PendienteDatos','EnRevision','Aprobada','Rechazada',
     'Emitida','Facturada','Anulada','Cerrada'
   ],

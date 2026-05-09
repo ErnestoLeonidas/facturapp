@@ -98,77 +98,6 @@ window.ReportesView = {
   }
 };
 
-window.RecurrentesView = {
-  list() {
-    UI.setTitle('Solicitudes recurrentes (mensuales)');
-    $('#view-root').html(`
-      <div class="card mb-3"><div class="card-header d-flex justify-content-between">
-        <span>Plantillas activas</span>
-        <button class="btn btn-sm btn-primary" id="btn-nueva-programada">+ Nueva plantilla</button>
-      </div></div>
-      <div class="card">
-        <div class="table-responsive">
-          <table class="table mb-0 align-middle table-hover">
-            <thead><tr><th>Nombre</th><th>Cliente</th><th>Frecuencia</th><th>Día emisión</th><th></th></tr></thead>
-            <tbody id="tbl-programadas"><tr><td colspan="5" class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></td></tr></tbody>
-          </table>
-        </div>
-      </div>
-    `);
-
-    const cargar = () => {
-      SolicitudesService.recurrentes().then(data => {
-        if (!data.length) { $('#tbl-programadas').html('<tr><td colspan="5" class="text-muted text-center py-3">Sin plantillas</td></tr>'); return; }
-        $('#tbl-programadas').html(data.map(p => `
-          <tr>
-            <td>${p.nombre}</td>
-            <td>${p.cliente_nombre||'—'}</td>
-            <td>${p.frecuencia}</td>
-            <td>Día ${p.dia_emision||'—'}</td>
-            <td>
-              <button class="btn btn-sm btn-outline-primary" onclick="RecurrentesView._generar('${p.id}')">Generar período</button>
-              <button class="btn btn-sm btn-outline-secondary ms-1" onclick="RecurrentesView._editar('${p.id}')">Editar</button>
-            </td>
-          </tr>`).join(''));
-      }).fail(e => UI.error('#tbl-programadas', e));
-    };
-
-    cargar();
-
-    $('#btn-nueva-programada').on('click', () => {
-      ClientesService.list({ estado: 'Activo' }).then(clientes => {
-        const nombre = prompt('Nombre de la plantilla:');
-        if (!nombre) return;
-        const cliOpts = clientes.map((c, i) => `${i+1}. ${c.nombre_corto}`).join('\n');
-        const idx = prompt('Seleccionar cliente:\n' + cliOpts);
-        const cliente = clientes[Number(idx)-1];
-        if (!cliente) return;
-        const dia = Number(prompt('Día de emisión (1-28):', '1'));
-        SolicitudesService.recurrenteCrear({ cliente_id: cliente.id, nombre, dia_emision: dia, frecuencia: 'Mensual' })
-          .then(() => { UI.toast('Plantilla creada', 'success'); cargar(); })
-          .fail(e => UI.toast(e.message, 'danger'));
-      });
-    });
-  },
-
-  _generar(id) {
-    const periodo = prompt('Período a generar (YYYY-MM):', new Date().toISOString().slice(0,7));
-    if (!periodo) return;
-    SolicitudesService.recurrenteGenerar(id, periodo).then(s => {
-      UI.toast('Generada: ' + s.folio, 'success');
-      location.hash = '#/solicitudes/' + s.id;
-    }).fail(e => UI.toast(e.message, 'danger'));
-  },
-
-  _editar(id) {
-    const dia = Number(prompt('Nuevo día de emisión:'));
-    if (!dia) return;
-    SolicitudesService.recurrenteEditar(id, { dia_emision: dia })
-      .then(() => { UI.toast('Actualizado', 'success'); RecurrentesView.list(); })
-      .fail(e => UI.toast(e.message, 'danger'));
-  }
-};
-
 window.ConfiguracionView = {
   render() {
     UI.setTitle('Configuración e integraciones');
@@ -282,14 +211,18 @@ window.ConfiguracionView = {
     IntegracionesService.estadoSheets().then(d => {
       $('#sheets-estado').html(`
         <p class="small mb-1"><strong>Service Account:</strong> ${d.configured ? 'configurado' : 'pendiente'}</p>
-        <p class="small text-muted mb-2">${d.baseFacturacionId}<br>${d.baseFacturacionRange}</p>
+        <p class="small text-muted mb-2">Base: ${d.baseFacturacionId}<br>Master: ${d.masterFacturacionId || 'pendiente'}<br>${d.baseFacturacionRange}</p>
         <div class="d-grid gap-1">
           <button class="btn btn-sm btn-outline-primary" id="btn-sync-base">Sync base facturacion</button>
+          <button class="btn btn-sm btn-primary" id="btn-refresh-master-sheets">Refresh master desde Drive</button>
+          <button class="btn btn-sm btn-outline-primary" id="btn-push-master-sheets">Enviar master a Excel</button>
           <button class="btn btn-sm btn-outline-success" id="btn-import-base-excel">Importar Excel base</button>
           <button class="btn btn-sm btn-outline-success" id="btn-import-master-excel">Importar master</button>
           <button class="btn btn-sm btn-outline-secondary" id="btn-sync-proy">Sync proyecciones</button>
         </div>`);
       $('#btn-sync-base').on('click', () => ConfiguracionView._syncSheets('base_facturacion'));
+      $('#btn-refresh-master-sheets').on('click', () => ConfiguracionView._refreshMasterSheets());
+      $('#btn-push-master-sheets').on('click', () => ConfiguracionView._pushMasterSheets());
       $('#btn-import-base-excel').on('click', () => ConfiguracionView._importBaseExcel());
       $('#btn-import-master-excel').on('click', () => ConfiguracionView._importMasterExcel());
       $('#btn-sync-proy').on('click', () => ConfiguracionView._syncSheets('proyecciones'));
@@ -356,6 +289,32 @@ window.ConfiguracionView = {
     IntegracionesService.importMasterExcel()
       .then(d => {
         UI.toast(`Master OK: ${d.filas_procesadas}/${d.filas_leidas} filas`, 'success');
+        ConfiguracionView._cargarBitacora();
+      })
+      .fail(e => {
+        UI.toast(e.message, 'warning');
+        ConfiguracionView._cargarBitacora();
+      });
+  },
+
+  _refreshMasterSheets() {
+    UI.toast('Actualizando master desde Google Sheets...', 'info');
+    IntegracionesService.refreshMasterSheets()
+      .then(d => {
+        UI.toast(`Refresh OK: ${d.filas_procesadas}/${d.filas_leidas} filas`, 'success');
+        ConfiguracionView._cargarBitacora();
+      })
+      .fail(e => {
+        UI.toast(e.message, 'warning');
+        ConfiguracionView._cargarBitacora();
+      });
+  },
+
+  _pushMasterSheets() {
+    UI.toast('Enviando master a Google Sheets...', 'info');
+    IntegracionesService.pushMasterSheets()
+      .then(d => {
+        UI.toast(`Excel actualizado: ${d.filas_procesadas} filas`, 'success');
         ConfiguracionView._cargarBitacora();
       })
       .fail(e => {

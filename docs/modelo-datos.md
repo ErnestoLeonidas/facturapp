@@ -104,7 +104,7 @@ Núcleo del sistema.
 | `tipo` | text CHECK (`mensual`, `adicional`) | |
 | `cliente_id` | uuid FK | |
 | `coordinador_id` | uuid FK | encargado de la solicitud |
-| `empresa_emisora` | text CHECK (`MAS_CONSULTORES`, `MAS_CAPACITACION`) | |
+| `empresa_emisora` | text CHECK (`MAS_CONSULTORES`, `MAS_CAPACITACIONES`) | |
 | `periodo` | text | "2026-05" |
 | `fecha_solicitud` | date | |
 | `fecha_facturacion` | date | nullable hasta facturar |
@@ -147,7 +147,8 @@ Reparto por Centro de Proyecto (la plantilla muestra ≥1 fila de CP con monto).
 | `id` | uuid PK | |
 | `solicitud_id` | uuid FK | |
 | `cp_id` | uuid FK → cp | |
-| `monto_clp` | numeric(14,2) NOT NULL | |
+| `monto_uf` | numeric(12,2) | monto ingresado por usuario |
+| `monto_clp` | numeric(14,2) NOT NULL | calculado desde `monto_uf * uf_valor`; se recalcula al exportar |
 | `orden` | int | para preservar el orden en la exportación |
 
 ### `solicitud_receptor`

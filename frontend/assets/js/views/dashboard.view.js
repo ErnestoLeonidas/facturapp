@@ -32,9 +32,9 @@ window.DashboardView = {
 
     SolicitudesService.list({ limit: 10 }).then(data => {
       const rows = Array.isArray(data) ? data : (data.items || data);
-      const rev   = rows.filter(s => s.estado === 'EnRevision').length;
-      const emit  = rows.filter(s => ['Aprobada','Emitida','Facturada'].includes(s.estado)).length;
-      const adic  = rows.filter(s => s.tipo === 'adicional' && !['Cerrada','Anulada'].includes(s.estado)).length;
+      const rev   = rows.filter(s => ['PENDIENTE OC / HES','EnRevision'].includes(s.estado)).length;
+      const emit  = rows.filter(s => ['FACTURA SOLICITADA','FACTURADO','Aprobada','Emitida','Facturada'].includes(s.estado)).length;
+      const adic  = rows.filter(s => s.tipo === 'adicional' && !['FACTURADO','Cerrada','Anulada'].includes(s.estado)).length;
       $('[data-kpi=revision]').text(rev);
       $('[data-kpi=emitidas]').text(emit);
       $('[data-kpi=adicionales]').text(adic);

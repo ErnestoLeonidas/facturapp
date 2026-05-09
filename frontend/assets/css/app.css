@@ -47,3 +47,21 @@ body { background: #fff; color: #212529; }
 .estado-Facturada       { background: #d1e7dd; color: #0f5132; }
 .estado-Anulada         { background: #f8d7da; color: #842029; }
 .estado-Cerrada         { background: #e2e3e5; color: #41464b; }
+.estado-PENDIENTE-OC-HES { background: #fff3cd; color: #664d03; }
+.estado-FACTURA-SOLICITADA { background: #cfe2ff; color: #084298; }
+.estado-FACTURADO { background: #d1e7dd; color: #0f5132; }
+
+.cal-months {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: .5rem;
+}
+.cal-month-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 2.25rem;
+  overflow: hidden;
+}
+@media (max-width: 1200px) { .cal-months { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+@media (max-width: 576px) { .cal-months { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

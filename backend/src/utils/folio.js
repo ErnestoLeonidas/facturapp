@@ -2,10 +2,17 @@ const db = require('../db');
 
 function generarFolio() {
   const year = new Date().getFullYear();
-  const row = db.prepare(
-    `SELECT COUNT(*) as cnt FROM solicitud_factura WHERE folio LIKE ?`
-  ).get(`SF-${year}-%`);
-  const n = (row.cnt || 0) + 1;
+  const rows = db.prepare(
+    `SELECT folio FROM solicitud_factura WHERE folio LIKE ?`
+  ).all(`SF-${year}-%`);
+
+  const ultimo = rows.reduce((max, row) => {
+    const match = String(row.folio || '').match(new RegExp(`^SF-${year}-(\\d+)$`));
+    if (!match) return max;
+    return Math.max(max, Number(match[1]) || 0);
+  }, 0);
+  const n = ultimo + 1;
+
   return `SF-${year}-${String(n).padStart(5, '0')}`;
 }
 

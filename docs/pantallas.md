@@ -67,7 +67,7 @@ Se divide visualmente en 4 bloques:
 - OC, HES (con flag `requiere_hes`), Glosa.
 - Receptores: multi-select del catálogo del cliente + acción "agregar nuevo".
 - Items (tabla editable): producto/descripcion, cantidad, UF unitaria o CLP unitario, subtotal.
-- CPs (tabla editable): código CP, monto.
+- CPs (tabla editable): código CP, monto UF y monto CLP calculado.
 - Validación visual: la suma de CPs debe igualar el neto.
 
 **d) Aside resumen**

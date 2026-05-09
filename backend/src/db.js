@@ -90,6 +90,36 @@ CREATE TABLE IF NOT EXISTS cliente_producto (
   UNIQUE(cliente_id, producto_id)
 );
 
+CREATE TABLE IF NOT EXISTS cliente_coordinador (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL REFERENCES cliente(id),
+  coordinador_id TEXT NOT NULL REFERENCES coordinador(id),
+  cp_id TEXT REFERENCES cp(id),
+  activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(cliente_id, coordinador_id, cp_id)
+);
+
+CREATE TABLE IF NOT EXISTS proyeccion_facturacion (
+  id TEXT PRIMARY KEY,
+  cliente_id TEXT NOT NULL REFERENCES cliente(id),
+  cliente TEXT,
+  codigo TEXT,
+  nombre TEXT,
+  tipo_cp TEXT,
+  tipo_impuesto TEXT,
+  mes TEXT,
+  anio INTEGER,
+  monto_uf REAL,
+  moneda TEXT,
+  estado TEXT,
+  observaciones TEXT,
+  fecha_estimada_facturacion TEXT,
+  codigo_facturacion TEXT,
+  source TEXT,
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS desarrollador (
   id TEXT PRIMARY KEY,
   nombre TEXT NOT NULL,
@@ -146,6 +176,7 @@ CREATE TABLE IF NOT EXISTS solicitud_cp (
   id TEXT PRIMARY KEY,
   solicitud_id TEXT NOT NULL REFERENCES solicitud_factura(id) ON DELETE CASCADE,
   cp_id TEXT NOT NULL REFERENCES cp(id),
+  monto_uf REAL,
   monto_clp REAL NOT NULL,
   orden INTEGER DEFAULT 0
 );
@@ -248,6 +279,10 @@ CREATE INDEX IF NOT EXISTS idx_sol_fecha ON solicitud_factura(fecha_solicitud DE
 CREATE INDEX IF NOT EXISTS idx_hist_sol ON historial_estado(solicitud_id, fecha DESC);
 CREATE INDEX IF NOT EXISTS idx_receptor_cli ON receptor(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_cp_cli ON cp(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_cliente_coord_cliente ON cliente_coordinador(cliente_id, activo);
+CREATE INDEX IF NOT EXISTS idx_cliente_coord_cp ON cliente_coordinador(cp_id, activo);
+CREATE INDEX IF NOT EXISTS idx_proy_cliente_periodo ON proyeccion_facturacion(cliente_id, anio, mes);
+CREATE INDEX IF NOT EXISTS idx_proy_codigo ON proyeccion_facturacion(codigo);
 CREATE INDEX IF NOT EXISTS idx_bitacora_integracion ON bitacora_integracion(integracion, dataset, iniciado_at DESC);
 `);
 
@@ -261,6 +296,17 @@ const cpColumns = db.prepare("PRAGMA table_info('cp')").all().map(col => col.nam
 if (!cpColumns.includes('tipo_cp')) {
   db.exec("ALTER TABLE cp ADD COLUMN tipo_cp TEXT;");
 }
+
+const solicitudCpColumns = db.prepare("PRAGMA table_info('solicitud_cp')").all().map(col => col.name);
+if (!solicitudCpColumns.includes('monto_uf')) {
+  db.exec("ALTER TABLE solicitud_cp ADD COLUMN monto_uf REAL;");
+}
+
+const clienteCoordColumns = db.prepare("PRAGMA table_info('cliente_coordinador')").all().map(col => col.name);
+if (!clienteCoordColumns.includes('cp_nombre')) {
+  db.exec("ALTER TABLE cliente_coordinador ADD COLUMN cp_nombre TEXT;");
+}
+db.exec("CREATE INDEX IF NOT EXISTS idx_cliente_coord_cp_nombre ON cliente_coordinador(cliente_id, cp_nombre, activo);");
 
 // Helper: wrap a function in BEGIN/COMMIT/ROLLBACK
 db.transaction = function(fn) {

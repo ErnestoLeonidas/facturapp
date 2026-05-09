@@ -175,7 +175,7 @@ function upsertEmpresa(row) {
   db.prepare(`
     INSERT INTO empresa_emisora (codigo, razon_social, rut, giro, afecto_iva, iva_pct)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(codigo, razonSocial, clean(row.rut), clean(row.giro), codigo === 'MAS_CAPACITACION' ? 0 : 1, 0.19);
+  `).run(codigo, razonSocial, clean(row.rut), clean(row.giro), ['MAS_CAPACITACION', 'MAS_CAPACITACIONES'].includes(codigo) ? 0 : 1, 0.19);
   return true;
 }
 
@@ -224,4 +224,4 @@ async function importFromPublicGoogleSheet(spreadsheetId) {
   };
 }
 
-module.exports = { importFromPublicGoogleSheet };
+module.exports = { importFromPublicGoogleSheet, applyMasterRows };

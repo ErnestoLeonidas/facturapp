@@ -10,13 +10,7 @@ window.ClientesView = {
               <option value="">Estado</option><option>Activo</option><option>Inactivo</option>
             </select>
           </div>
-          <div class="col-md-3">
-            <select class="form-select form-select-sm" id="cli-frec">
-              <option value="">Frecuencia</option>
-              <option>Mensual</option><option>Bimensual</option><option>Trimestral</option><option>Anual</option>
-            </select>
-          </div>
-          <div class="col-md-2 d-flex gap-1">
+          <div class="col-md-5 d-flex gap-1">
             <button class="btn btn-sm btn-outline-primary flex-grow-1" id="cli-filtrar">Filtrar</button>
             <button class="btn btn-sm btn-primary" id="cli-nuevo">+</button>
           </div>
@@ -26,10 +20,10 @@ window.ClientesView = {
         <div class="table-responsive">
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
-              <th>Cliente</th><th>RUT</th><th>Frecuencia</th><th>Día fact.</th>
+              <th>Cliente</th><th>RUT</th>
               <th>HES</th><th>Coordinador</th><th>Estado</th><th></th>
             </tr></thead>
-            <tbody id="tbl-clientes"><tr><td colspan="8" class="text-center py-4">
+            <tbody id="tbl-clientes"><tr><td colspan="6" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
@@ -52,15 +46,13 @@ window.ClientesView = {
     `);
 
     const cargar = () => {
-      const params = { q: $('#cli-q').val(), estado: $('#cli-estado').val(), frecuencia: $('#cli-frec').val() };
+      const params = { q: $('#cli-q').val(), estado: $('#cli-estado').val() };
       ClientesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="8" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="6" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-clientes').html(data.map(c => `
           <tr style="cursor:pointer" onclick="ClientesView.detalle_inline('${c.id}')">
             <td><strong>${c.nombre_corto}</strong>${c.razon_social ? '<br><small class="text-muted">'+c.razon_social+'</small>' : ''}</td>
             <td>${c.rut || '—'}</td>
-            <td><span class="badge bg-secondary">${c.frecuencia||'—'}</span></td>
-            <td>${c.dia_facturacion ? 'Día '+c.dia_facturacion : '—'}</td>
             <td>${c.requiere_hes ? '<span class="badge bg-warning text-dark">Sí</span>' : 'No'}</td>
             <td>${c.coordinador_nombre || '—'}</td>
             <td><span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></td>
@@ -112,15 +104,27 @@ window.ClientesView = {
                 <p><strong>RUT:</strong> ${c.rut||'—'}</p>
                 <p><strong>Giro:</strong> ${c.giro||'—'}</p>
                 <p><strong>Dirección:</strong> ${c.direccion||'—'}</p>
-                <p><strong>Frecuencia:</strong> ${c.frecuencia||'—'} ${c.dia_facturacion?'(Día '+c.dia_facturacion+')':''}</p>
                 <p><strong>Requiere HES:</strong> ${c.requiere_hes?'<span class="badge bg-warning text-dark">Sí</span>':'No'}</p>
-                <p><strong>Coordinador:</strong> ${c.coordinador?c.coordinador.nombre:'—'}</p>
+                <p><strong>Coordinador base:</strong> ${c.coordinador?c.coordinador.nombre:'—'}</p>
                 <p><strong>Estado:</strong> <span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></p>
                 ${c.notas?`<p><strong>Notas:</strong> ${c.notas}</p>`:''}
               </div>
             </div>
           </div>
           <div class="col-md-7">
+            <div class="card mb-3">
+              <div class="card-header d-flex justify-content-between">
+                Coordinadores
+                <button class="btn btn-sm btn-outline-primary" id="btn-add-coord-cli">+ Coordinador</button>
+              </div>
+              <ul class="list-group list-group-flush" id="lst-coord-cli">
+                ${(c.coordinadores||[]).map(a => `
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>${a.nombre}<br><small class="text-muted">${a.cp_nombre || 'General del cliente'}</small></span>
+                    <button class="btn btn-sm btn-outline-danger" data-delete-coord-cli="${a.id}">Eliminar</button>
+                  </li>`).join('') || '<li class="list-group-item text-muted">Sin coordinadores asignados</li>'}
+              </ul>
+            </div>
             <div class="card mb-3">
               <div class="card-header d-flex justify-content-between">
                 Receptores
@@ -165,7 +169,7 @@ window.ClientesView = {
           </div>
           <div class="card"><div class="table-responsive">
             <table class="table mb-0 align-middle">
-              <thead><tr><th>Folio</th><th>Período</th><th>Tipo</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Folio</th><th>Período</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
               <tbody id="tbl-cli-solic"></tbody>
             </table>
           </div></div>
@@ -176,10 +180,9 @@ window.ClientesView = {
         $('#tbl-cli-solic').html(sols.slice(0,10).map(s => `
           <tr style="cursor:pointer" onclick="location.hash='#/solicitudes/${s.id}'">
             <td><code>${s.folio}</code></td><td>${s.periodo}</td>
-            <td>${s.tipo}</td>
             <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
             <td>${UI.estadoChip(s.estado)}</td>
-          </tr>`).join('') || '<tr><td colspan="5" class="text-muted text-center py-3">Sin solicitudes</td></tr>');
+          </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">Sin solicitudes</td></tr>');
       });
 
       $('#btn-editar-cli').on('click', () => {
@@ -211,6 +214,15 @@ window.ClientesView = {
         }
       });
 
+      $('#btn-add-coord-cli').on('click', () => ClientesView._abrirModalCoordinadorCliente(params, c));
+
+      $('[data-delete-coord-cli]').on('click', function() {
+        const asignacionId = $(this).data('delete-coord-cli');
+        ClientesService.deleteCoordinador(c.id, asignacionId)
+          .then(() => { UI.toast('Coordinador quitado', 'success'); ClientesView.detalle(params); })
+          .fail(e => UI.toast(e.message || 'Error al quitar coordinador', 'danger'));
+      });
+
       $('#btn-add-cp').on('click', () => ClientesView._abrirModalCP(params, c, null));
 
       $('[data-edit-cp]').on('click', function() {
@@ -228,6 +240,55 @@ window.ClientesView = {
         });
       });
     }).fail(e => UI.error('#view-root', e));
+  },
+
+  _abrirModalCoordinadorCliente(params, cliente) {
+    const $modal = $(`<div class="modal fade" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+        <h5>Asignar coordinador</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Coordinador *</label>
+          <select class="form-select" name="coord_id"><option value="">Seleccionar</option></select>
+        </div>
+        <div>
+          <label class="form-label">Nombre CP asociado</label>
+          <select class="form-select" name="coord_cp_nombre">
+            <option value="">General del cliente</option>
+            ${[...new Set((cliente.cps || []).map(cp => cp.nombre).filter(Boolean))]
+              .sort((a, b) => a.localeCompare(b, 'es'))
+              .map(nombre => `<option value="${nombre}">${nombre}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnSaveCoordCli">Guardar</button>
+      </div>
+    </div></div></div>`);
+    $('body').append($modal);
+    const modal = new bootstrap.Modal($modal[0]);
+    CoordinadoresService.list().then(coords => {
+      $modal.find('[name=coord_id]').append((coords || [])
+        .filter(coord => coord.activo !== 0)
+        .map(coord => `<option value="${coord.id}">${coord.nombre}</option>`)
+        .join(''));
+    });
+    modal.show();
+    $modal.find('#btnSaveCoordCli').on('click', () => {
+      const payload = {
+        coordinador_id: $modal.find('[name=coord_id]').val(),
+        cp_nombre: $modal.find('[name=coord_cp_nombre]').val() || null
+      };
+      ClientesService.addCoordinador(cliente.id, payload).then(() => {
+        modal.hide();
+        UI.toast('Coordinador asignado', 'success');
+        ClientesView.detalle(params);
+      }).fail(e => UI.toast(e.message || 'Error al asignar coordinador', 'danger'));
+    });
+    $modal.on('hidden.bs.modal', () => $modal.remove());
   },
 
   _abrirModalCP(params, cliente, cp) {
@@ -292,13 +353,6 @@ window.ClientesView = {
         <div class="col-md-8"><label class="form-label">Giro</label><input class="form-control" name="giro" value="${c.giro||''}"></div>
         <div class="col-12"><label class="form-label">Dirección</label><input class="form-control" name="direccion" value="${c.direccion||''}"></div>
         <div class="col-md-4">
-          <label class="form-label">Frecuencia</label>
-          <select class="form-select" name="frecuencia">
-            ${['Mensual','Bimensual','Trimestral','Anual'].map(f=>`<option ${c.frecuencia===f?'selected':''}>${f}</option>`).join('')}
-          </select>
-        </div>
-        <div class="col-md-4"><label class="form-label">Día facturación</label><input class="form-control" type="number" min="1" max="31" name="dia_facturacion" value="${c.dia_facturacion||''}"></div>
-        <div class="col-md-4">
           <label class="form-label">Estado</label>
           <select class="form-select" name="estado">
             ${['Activo','En espera','Inactivo'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
@@ -341,8 +395,6 @@ window.ClientesView = {
       rut: val('rut') || null,
       giro: val('giro') || null,
       direccion: val('direccion') || null,
-      frecuencia: val('frecuencia'),
-      dia_facturacion: val('dia_facturacion') ? Number(val('dia_facturacion')) : null,
       estado: val('estado'),
       coordinador_id: val('coordinador_id') || null,
       requiere_hes: $f.find('[name=requiere_hes]').is(':checked'),

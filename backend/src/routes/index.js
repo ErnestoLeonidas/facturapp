@@ -8,6 +8,7 @@ r.use('/productos',              require('./productos'));
 r.use('/desarrolladores',        require('./desarrolladores'));
 r.use('/solicitudes-programadas',require('./solicitudes-programadas'));
 r.use('/solicitudes',            require('./solicitudes'));
+r.use('/calendario',             require('./calendario'));
 r.use('/tiempos',                require('./tiempos'));
 r.use('/uf',                     require('./uf'));
 r.use('/reportes',               require('./reportes'));

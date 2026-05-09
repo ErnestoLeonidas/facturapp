@@ -2,6 +2,7 @@ const r = require('express').Router();
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
+const { pushMasterAsync } = require('../services/masterAutoSync');
 
 function normalizarNombre(nombre) {
   return String(nombre || '').trim().toLocaleLowerCase('es-CL');
@@ -37,6 +38,7 @@ r.post('/', (req, res) => {
   if (existeDuplicadoNombre(nombre)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un coordinador con ese nombre');
   const id = uuidv4();
   db.prepare('INSERT INTO coordinador (id, nombre, email, slack_user_id) VALUES (?, ?, ?, ?)').run(id, nombre, email || null, slack_user_id || null);
+  pushMasterAsync('coordinador creado');
   ok(res, db.prepare('SELECT * FROM coordinador WHERE id = ?').get(id), 201);
 });
 
@@ -53,7 +55,11 @@ r.patch('/:id', (req, res) => {
   if (email !== undefined)         { sets.push('email=?'); vals.push(email); }
   if (slack_user_id !== undefined) { sets.push('slack_user_id=?'); vals.push(slack_user_id); }
   if (activo !== undefined)        { sets.push('activo=?'); vals.push(activo ? 1 : 0); }
-  if (sets.length) { vals.push(req.params.id); db.prepare(`UPDATE coordinador SET ${sets.join(',')} WHERE id=?`).run(...vals); }
+  if (sets.length) {
+    vals.push(req.params.id);
+    db.prepare(`UPDATE coordinador SET ${sets.join(',')} WHERE id=?`).run(...vals);
+    pushMasterAsync('coordinador actualizado');
+  }
   ok(res, db.prepare('SELECT * FROM coordinador WHERE id = ?').get(req.params.id));
 });
 
@@ -61,6 +67,7 @@ r.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM coordinador WHERE id = ?').get(req.params.id);
   if (!row) return notFound(res);
   db.prepare('UPDATE coordinador SET activo = 0 WHERE id = ?').run(req.params.id);
+  pushMasterAsync('coordinador desactivado');
   ok(res, { id: req.params.id, activo: 0 });
 });
 

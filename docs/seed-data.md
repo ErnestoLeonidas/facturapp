@@ -73,7 +73,7 @@ Ejemplo confirmado (de la plantilla Soprole noviembre 2025):
 | Código interno | Nombre completo | Tributación |
 |---|---|---|
 | `MAS_CONSULTORES` | MAS Consultores S.A. | Afecto IVA 19% |
-| `MAS_CAPACITACION` | Más Capacitación | Exento (SENCE / OTEC) |
+| `MAS_CAPACITACIONES` | Más Capacitación | Exento (SENCE / OTEC) |
 
 (Información tributaria a confirmar con Macarena Ayala — RUT, dirección legal, etc., para el header de la exportación.)
 

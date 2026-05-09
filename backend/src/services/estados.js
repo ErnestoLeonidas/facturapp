@@ -2,6 +2,9 @@ const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 
 const TRANSICIONES = {
+  'PENDIENTE OC / HES': ['FACTURA SOLICITADA', 'Borrador'],
+  'FACTURA SOLICITADA': ['FACTURADO', 'PENDIENTE OC / HES'],
+  'FACTURADO': ['Cerrada'],
   Borrador:       ['PendienteDatos', 'EnRevision'],
   PendienteDatos: ['EnRevision', 'Borrador'],
   EnRevision:     ['Aprobada', 'Rechazada'],
@@ -13,7 +16,7 @@ const TRANSICIONES = {
   Cerrada:        []
 };
 
-const ESTADO_EDITABLE = ['Borrador', 'PendienteDatos'];
+const ESTADO_EDITABLE = ['PENDIENTE OC / HES', 'FACTURA SOLICITADA', 'Borrador', 'PendienteDatos'];
 
 function puedeEditar(estado) {
   return ESTADO_EDITABLE.includes(estado);
