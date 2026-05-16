@@ -2,7 +2,6 @@ window.SolicitudesService = {
   list(filtros)         { return Api.get('/solicitudes' + (filtros ? '?' + $.param(filtros) : '')); },
   get(id)               { return Api.get('/solicitudes/' + id); },
   create(payload)       { return Api.post('/solicitudes', payload); },
-  materializarProyeccion(id) { return Api.post('/solicitudes/proyecciones/' + encodeURIComponent(id) + '/materializar'); },
   update(id, payload)   { return Api.patch('/solicitudes/' + id, payload); },
   delete(id)            { return Api.del('/solicitudes/' + id); },
   cambiarEstado(id, hacia, comentario) {

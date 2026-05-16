@@ -28,10 +28,10 @@ window.SolicitudesView = {
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
               <th>Cliente</th><th>Período</th>
-              <th>Empresa</th><th>Coordinador</th><th class="text-end">Neto</th><th class="text-end">Total</th>
+              <th>Empresa</th><th>Coordinador</th><th class="text-end">UF</th><th class="text-end">Neto</th><th class="text-end">Total</th>
               <th>Estado</th><th></th>
             </tr></thead>
-            <tbody id="tbl-solicitudes"><tr><td colspan="8" class="text-center py-4">
+            <tbody id="tbl-solicitudes"><tr><td colspan="9" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
@@ -41,27 +41,27 @@ window.SolicitudesView = {
 
     let filtrosActuales = {};
     const cargar = (params = {}) => {
-      params = { periodo: periodoActual, includeProyecciones: 1, ...params };
+      params = { periodo: periodoActual, ...params };
       if (!params.periodo) params.periodo = periodoActual;
       filtrosActuales = params;
       SolicitudesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="8" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="9" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-solicitudes').html(data.map(s => {
-          const empresa = s.empresa_emisora === 'MAS_CONSULTORES' ? 'Consultores' : 'Capacitación';
-          const proy = !!s.is_proyeccion;
-          return `<tr style="cursor:pointer" ${proy ? `data-proyeccion-id="${s.proyeccion_id}"` : `data-solicitud-id="${s.id}"`}>
+          const empresa = 'Consultores';
+          return `<tr style="cursor:pointer" data-solicitud-id="${s.id}">
             <td>${s.cliente_nombre||''}</td>
             <td>${s.periodo}</td>
             <td><small>${empresa}</small></td>
             <td>${s.coordinador_nombre || '—'}</td>
+            <td class="text-end"><small>${SolicitudesView._formatUFLista(s.monto_uf)}</small></td>
             <td class="text-end"><small>${Format.clp(s.monto_neto_clp)}</small></td>
             <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
             <td>${UI.estadoChip(s.estado)}</td>
             <td>
-              <button class="btn btn-sm btn-outline-secondary" ${proy ? `data-proyeccion-id="${s.proyeccion_id}"` : `data-open-id="${s.id}"`} type="button">${proy ? 'Abrir seguimiento' : 'Ver'}</button>
-              ${proy ? '' : `<button class="btn btn-sm btn-outline-danger ms-1" data-delete-id="${s.id}" type="button">
+              <button class="btn btn-sm btn-outline-secondary" data-open-id="${s.id}" type="button">Ver</button>
+              <button class="btn btn-sm btn-outline-danger ms-1" data-delete-id="${s.id}" type="button">
                 <i class="bi bi-trash"></i> Eliminar
-              </button>`}
+              </button>
             </td>
           </tr>`;
         }).join(''));
@@ -77,7 +77,6 @@ window.SolicitudesView = {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target).entries());
       Object.keys(d).forEach(k => !d[k] && delete d[k]);
-      d.includeProyecciones = 1;
       if (!d.periodo) d.periodo = periodoActual;
       cargar(d);
     });
@@ -91,12 +90,6 @@ window.SolicitudesView = {
     $('#tbl-solicitudes').on('click', '[data-solicitud-id]', function(e) {
       if ($(e.target).closest('button, a').length) return;
       location.hash = '#/solicitudes/' + $(this).data('solicitud-id');
-    });
-
-    $('#tbl-solicitudes').on('click', '[data-proyeccion-id]', function(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      SolicitudesView._materializarProyeccion($(this).data('proyeccion-id'));
     });
 
     $('#tbl-solicitudes').on('click', '[data-delete-id]', function(e) {
@@ -115,17 +108,15 @@ window.SolicitudesView = {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   },
 
+  _formatUFLista(valor) {
+    const uf = Number(valor) || 0;
+    if (!uf) return '0';
+    return uf.toLocaleString('es-CL', { maximumFractionDigits: 2 });
+  },
+
   _hoyISO() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  },
-
-  _materializarProyeccion(id) {
-    if (!id) return;
-    UI.toast('Abriendo seguimiento...', 'info');
-    SolicitudesService.materializarProyeccion(id).then(s => {
-      location.hash = '#/solicitudes/' + s.id;
-    }).fail(e => UI.toast(e.message || 'No se pudo abrir la proyeccion', 'danger'));
   },
 
   nueva(params = {}) {
@@ -143,12 +134,13 @@ window.SolicitudesView = {
 
   _renderFormView(sol, prefill) {
     const isNew = !sol;
-    const readonly = sol && !['PENDIENTE OC / HES','FACTURA SOLICITADA','Borrador','PendienteDatos'].includes(sol.estado);
+    const readonly = sol && !['PENDIENTE OC / HES','FACTURA SOLICITADA','Borrador','PendienteDatos'].includes(SolicitudesView._estadoSolicitudVisible(sol.estado));
     UI.setTitle(isNew ? 'Nueva solicitud' : sol.folio);
 
     const empresaOpts = AppConfig.empresasEmisoras.map(e =>
       `<option value="${e.codigo}" ${(prefill.empresa_emisora||'MAS_CONSULTORES')===e.codigo?'selected':''}>${e.nombre}</option>`).join('');
-    const estadoActual = prefill.estado || 'PENDIENTE OC / HES';
+    const estadoActual = SolicitudesView._estadoSolicitudVisible(prefill.estado || 'PENDIENTE OC / HES');
+    const cpEditable = !readonly || SolicitudesView._esPendienteOcHes(estadoActual);
     const estadoOpts = (AppConfig.estadosProyecciones || AppConfig.estadosSolicitud).map(e =>
       `<option value="${e}" ${estadoActual===e?'selected':''}>${e}</option>`).join('');
     const ufFecha = prefill.uf_fecha || SolicitudesView._hoyISO();
@@ -219,7 +211,7 @@ window.SolicitudesView = {
               </div>
               <div id="div-cps">
                 <table class="table table-sm align-middle">
-                  <thead><tr><th>CP del cliente</th><th class="text-end">Monto UF</th><th class="text-end">Monto CLP</th>${!readonly?'<th></th>':''}</tr></thead>
+                  <thead><tr><th>CP del cliente</th><th class="text-end">Monto UF</th><th class="text-end">Monto CLP</th>${cpEditable?'<th></th>':''}</tr></thead>
                   <tbody id="tbody-cps"></tbody>
                 </table>
                 <small class="text-muted" id="cp-alerta"></small>
@@ -263,7 +255,7 @@ window.SolicitudesView = {
                   <label class="form-label small">Moneda</label>
                   <select class="form-select form-select-sm" name="moneda_base" ${readonly?'disabled':''}>
                     <option value="UF" ${(prefill.moneda_base||'UF')==='UF'?'selected':''}>UF</option>
-                    <option value="CLP" ${prefill.moneda_base==='CLP'?'selected':''}>CLP</option>
+                    <option value="CLP" ${prefill.moneda_base==='CLP'?'selected':''}>CLP / Pesos</option>
                   </select>
                 </div>
                 <div class="col-6">
@@ -272,7 +264,10 @@ window.SolicitudesView = {
                 </div>
                 <div class="col-12 d-flex gap-1">
                   <input class="form-control form-control-sm" name="uf_valor" placeholder="Valor UF" value="${prefill.uf_valor||''}" ${readonly?'readonly':''}>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-uf">Buscar</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-uf">Buscar UF</button>
+                </div>
+                <div class="col-12">
+                  <small class="text-muted" id="uf-cp-help">Al buscar UF se actualiza el Monto CLP del CP activo.</small>
                 </div>
               </div>
               <hr>
@@ -333,7 +328,8 @@ window.SolicitudesView = {
       receptores: sol ? sol.receptores : [],
       clienteActual: sol ? sol.cliente : null,
       cpsDisponibles: [],
-      coordinadorActual: coordActual
+      coordinadorActual: coordActual,
+      activeCpIndex: (sol && sol.cps && sol.cps.length) ? 0 : null
     };
     SolicitudesView._renderCPs();
     SolicitudesView._renderReceptores();
@@ -345,6 +341,7 @@ window.SolicitudesView = {
       if (!fecha) return UI.toast('Selecciona una fecha UF', 'warning');
       IntegracionesService.uf(fecha).then(d => {
         $('[name=uf_valor]').val(d.valor);
+        SolicitudesView._aplicarUFEnCPActivo();
         SolicitudesView._actualizarObservacionUF();
         SolicitudesView._recalcular();
         UI.toast('UF ' + d.fecha + ': $' + d.valor, 'info');
@@ -356,6 +353,7 @@ window.SolicitudesView = {
       if (!SolicitudesView._state.clienteActual) return UI.toast('Selecciona primero un cliente', 'warning');
       if (!disponibles.length) return UI.toast('El cliente no tiene CPs asociados', 'warning');
       SolicitudesView._state.cps.push({ cp_id: '', cp_codigo: '', monto_uf: 0, monto_clp: 0 });
+      SolicitudesView._state.activeCpIndex = SolicitudesView._state.cps.length - 1;
       SolicitudesView._renderCPs();
     });
 
@@ -374,7 +372,7 @@ window.SolicitudesView = {
       });
     });
 
-    $('[name=moneda_base], [name=uf_valor], [name=uf_fecha]').on('change input', () => { SolicitudesView._actualizarObservacionUF(); SolicitudesView._renderCPs(); SolicitudesView._recalcular(); });
+    $('[name=moneda_base], [name=uf_valor], [name=uf_fecha]').on('change input', () => { SolicitudesView._aplicarUFEnCPActivo(); SolicitudesView._actualizarObservacionUF(); SolicitudesView._renderCPs(); SolicitudesView._recalcular(); });
     $('[name=empresa_emisora]').on('change', () => SolicitudesView._recalcular());
   },
 
@@ -413,12 +411,14 @@ window.SolicitudesView = {
 
   _renderCPs() {
     const { cps, readonly, cpsDisponibles } = SolicitudesView._state;
+    const cpEditable = SolicitudesView._puedeEditarCP();
+    const colspan = cpEditable ? 4 : 3;
     const ufValor = Number($('[name=uf_valor]').val()) || 0;
-    if (!cps.length) { $('#tbody-cps').html(`<tr><td colspan="${readonly?3:4}" class="text-center text-muted">Sin CPs</td></tr>`); return; }
+    if (!cps.length) { $('#tbody-cps').html(`<tr><td colspan="${colspan}" class="text-center text-muted">Sin CPs</td></tr>`); return; }
     $('#tbody-cps').html(cps.map((cp, i) => `
-      <tr>
+      <tr class="${SolicitudesView._state.activeCpIndex === i ? 'table-active' : ''}">
         <td>
-          ${readonly ? `<code>${cp.cp_codigo||cp.codigo||''}</code> <small class="text-muted">${cp.cp_nombre||''}</small>` : `
+          ${!cpEditable ? `<code>${cp.cp_codigo||cp.codigo||''}</code> <small class="text-muted">${cp.cp_nombre||''}</small>` : `
             <select class="form-select form-select-sm" data-cp="${i}" data-field="cp_id">
               <option value="">Seleccionar CP</option>
               ${(cpsDisponibles || []).map(opt => {
@@ -430,11 +430,17 @@ window.SolicitudesView = {
         </td>
         <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="0.01" value="${cp.monto_uf||''}" data-cp="${i}" data-field="monto_uf"></td>
         <td class="text-end"><small data-cp-clp="${i}">${Format.clp(SolicitudesView._cpMontoCLP(cp, ufValor))}</small></td>
-        ${!readonly?`<td><button class="btn btn-sm btn-outline-danger" onclick="SolicitudesView._removeCP(${i})">×</button></td>`:''}
+        ${cpEditable?`<td>${!readonly ? `<button class="btn btn-sm btn-outline-danger" onclick="SolicitudesView._removeCP(${i})">×</button>` : ''}</td>`:''}
       </tr>`).join(''));
+    $('#tbody-cps input, #tbody-cps select').on('focus', function() {
+      SolicitudesView._state.activeCpIndex = Number($(this).data('cp'));
+      $('#tbody-cps tr').removeClass('table-active');
+      $(this).closest('tr').addClass('table-active');
+    });
     $('#tbody-cps input, #tbody-cps select').on('change input', function() {
       const i = Number($(this).data('cp'));
       const field = $(this).data('field');
+      SolicitudesView._state.activeCpIndex = i;
       SolicitudesView._state.cps[i][field] = $(this).val();
       if (field === 'cp_id') {
         SolicitudesView._state.cps[i].cp_codigo = $(this).find(':selected').data('codigo') || '';
@@ -442,7 +448,8 @@ window.SolicitudesView = {
       }
       SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
       const ufValor = Number($('[name=uf_valor]').val()) || 0;
-      $(`[data-cp-clp="${i}"]`).text(Format.clp(SolicitudesView._cpMontoCLP(SolicitudesView._state.cps[i], ufValor)));
+      SolicitudesView._state.cps[i].monto_clp = SolicitudesView._cpMontoCLP(SolicitudesView._state.cps[i], ufValor);
+      $(`[data-cp-clp="${i}"]`).text(Format.clp(SolicitudesView._state.cps[i].monto_clp));
       SolicitudesView._recalcular();
     });
     SolicitudesView._recalcular();
@@ -492,6 +499,22 @@ window.SolicitudesView = {
     const montoUF = Number(cp.monto_uf);
     if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * ufValor);
     return Math.round(Number(cp.monto_clp) || 0);
+  },
+
+  _aplicarUFEnCPActivo() {
+    const state = SolicitudesView._state || {};
+    const cps = state.cps || [];
+    if (!cps.length) return;
+    const ufValor = Number($('[name=uf_valor]').val()) || 0;
+    if (!ufValor) return;
+    const active = Number.isInteger(state.activeCpIndex) && cps[state.activeCpIndex]
+      ? state.activeCpIndex
+      : (cps.length === 1 ? 0 : null);
+    const indices = active === null ? cps.map((_, i) => i) : [active];
+    indices.forEach(i => {
+      cps[i].monto_clp = SolicitudesView._cpMontoCLP(cps[i], ufValor);
+      $(`[data-cp-clp="${i}"]`).text(Format.clp(cps[i].monto_clp));
+    });
   },
 
   _redondearIVA(valor) {
@@ -546,7 +569,7 @@ window.SolicitudesView = {
 
   _renderBotones() {
     const { sol, readonly } = SolicitudesView._state;
-    const estado = sol ? sol.estado : 'PENDIENTE OC / HES';
+    const estado = sol ? SolicitudesView._estadoSolicitudVisible(sol.estado) : 'PENDIENTE OC / HES';
     const estadosProyecciones = AppConfig.estadosProyecciones || [];
     let btns = '';
 
@@ -733,6 +756,24 @@ window.SolicitudesView = {
     };
   },
 
-  _state: { sol: null, readonly: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [] },
+  _estadoSolicitudVisible(estado) {
+    return estado === 'FACTURADO' ? 'FACTURA SOLICITADA' : estado;
+  },
+
+  _puedeEditarCP() {
+    const state = SolicitudesView._state || {};
+    const estado = SolicitudesView._estadoSolicitudVisible(
+      (state.sol && state.sol.estado) || (state.prefill && state.prefill.estado) || 'PENDIENTE OC / HES'
+    );
+    return !state.readonly || SolicitudesView._esPendienteOcHes(estado);
+  },
+
+  _esPendienteOcHes(estado) {
+    return String(SolicitudesView._estadoSolicitudVisible(estado) || '')
+      .trim()
+      .toUpperCase() === 'PENDIENTE OC / HES';
+  },
+
+  _state: { sol: null, readonly: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [], activeCpIndex: null },
   _lastNeto: 0
 };

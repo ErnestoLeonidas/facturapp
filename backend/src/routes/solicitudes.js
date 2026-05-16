@@ -4,6 +4,10 @@ const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { cambiarEstado, puedeEditar } = require('../services/estados');
 const { generarFolio } = require('../utils/folio');
+const audit = require('../services/audit');
+
+const EMPRESA_EMISORA_UNICA = 'MAS_CONSULTORES';
+const TIPO_IMPUESTO_UNICO = 'AFECTO_IVA';
 
 function hydrateOne(sol) {
   if (!sol) return null;
@@ -101,6 +105,30 @@ function aplicarCoordinadorSugerido(row) {
   return row;
 }
 
+function solicitudMaterializadaDesdeProyeccion(proyeccionId, incluirEliminadas = false) {
+  let sql = `
+    SELECT sf.*
+    FROM solicitud_factura sf
+    JOIN historial_estado he ON he.solicitud_id = sf.id
+    WHERE he.comentario = ?
+  `;
+  if (!incluirEliminadas) sql += ' AND sf.is_delete = 0';
+  sql += ' ORDER BY sf.created_at DESC LIMIT 1';
+  return db.prepare(sql).get(`Creada desde proyeccion ${proyeccionId}`);
+}
+
+function proyeccionDescartada(proyeccionId) {
+  const row = db.prepare(`
+    SELECT sf.id
+    FROM solicitud_factura sf
+    JOIN historial_estado he ON he.solicitud_id = sf.id
+    WHERE he.comentario = ?
+      AND sf.is_delete = 1
+    LIMIT 1
+  `).get(`Creada desde proyeccion ${proyeccionId}`);
+  return !!row;
+}
+
 function calcularTotales(items, empresaCodigo, monedaBase, ufValor) {
   const empresa = db.prepare('SELECT * FROM empresa_emisora WHERE codigo = ?').get(empresaCodigo);
   const afectoIva = empresa && empresa.afecto_iva;
@@ -165,14 +193,12 @@ function normalizarCPsDeCliente(cps, clienteId, ufValor) {
 }
 
 const ESTADOS_SOLICITUD_VALIDOS = [
-  'PENDIENTE OC / HES', 'FACTURA SOLICITADA', 'FACTURADO',
-  'Borrador', 'PendienteDatos', 'EnRevision', 'Aprobada', 'Rechazada',
-  'Emitida', 'Facturada', 'Anulada', 'Cerrada'
+  'PENDIENTE OC / HES', 'FACTURA SOLICITADA'
 ];
-const ESTADOS_REQUIEREN_DATOS_COMPLETOS = ['FACTURA SOLICITADA', 'FACTURADO'];
+const ESTADOS_REQUIEREN_DATOS_COMPLETOS = ['FACTURA SOLICITADA'];
 
 function normalizarEstadoSolicitud(estado) {
-  const valor = estado || 'PENDIENTE OC / HES';
+  const valor = estado === 'FACTURADO' ? 'FACTURA SOLICITADA' : (estado || 'PENDIENTE OC / HES');
   if (!ESTADOS_SOLICITUD_VALIDOS.includes(valor)) {
     throw Object.assign(new Error(`Estado de solicitud invalido: ${valor}`), { code: 'VALIDATION_ERROR' });
   }
@@ -246,6 +272,20 @@ function mesNumero(value) {
   return idx >= 0 ? idx + 1 : null;
 }
 
+const TIPOS_IMPUESTO_VALIDOS = [TIPO_IMPUESTO_UNICO];
+
+function normalizarTipoImpuesto(value) {
+  return normalizarTexto(value);
+}
+
+function tipoImpuestoValido(value) {
+  return normalizarTipoImpuesto(value) === TIPO_IMPUESTO_UNICO;
+}
+
+function validarEmpresaEmisoraUnica(empresa) {
+  return normalizarTexto(empresa || EMPRESA_EMISORA_UNICA) === EMPRESA_EMISORA_UNICA;
+}
+
 function periodoDesdeProyeccion(row) {
   const mes = mesNumero(row.mes);
   if (!row.anio || !mes) return null;
@@ -253,13 +293,13 @@ function periodoDesdeProyeccion(row) {
 }
 
 function empresaDesdeCodigoFacturacion(codigo) {
-  const value = normalizarTexto(codigo);
-  if (value === 'MAS_CAPACITACIONES' || value === 'MAS_CAPACITACION') {
-    const plural = db.prepare("SELECT codigo FROM empresa_emisora WHERE codigo = 'MAS_CAPACITACIONES'").get();
-    return plural ? 'MAS_CAPACITACIONES' : 'MAS_CAPACITACION';
-  }
-  if (value === 'MIXTO') return 'MAS_CONSULTORES';
-  return value || 'MAS_CONSULTORES';
+  return EMPRESA_EMISORA_UNICA;
+}
+
+function empresaDesdeTipoImpuesto(tipoImpuesto, codigoFacturacion) {
+  const tipo = normalizarTipoImpuesto(tipoImpuesto);
+  if (tipo === TIPO_IMPUESTO_UNICO) return EMPRESA_EMISORA_UNICA;
+  return empresaDesdeCodigoFacturacion(codigoFacturacion);
 }
 
 function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
@@ -278,10 +318,11 @@ function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
     JOIN cliente c ON c.id = pf.cliente_id
     LEFT JOIN cp ON cp.cliente_id = pf.cliente_id AND cp.codigo = pf.codigo AND cp.activo = 1
     WHERE c.estado = 'Activo'
+      AND pf.tipo_impuesto = ?
       AND pf.anio = ?`;
-  const vals = [anio];
+  const vals = [TIPO_IMPUESTO_UNICO, anio];
   if (clienteId) { sql += ' AND pf.cliente_id = ?'; vals.push(clienteId); }
-  if (estado) { sql += ' AND pf.estado = ?'; vals.push(estado); }
+  if (estado) { sql += ' AND pf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
   if (q) {
     sql += ' AND (pf.cliente LIKE ? OR c.nombre_corto LIKE ? OR pf.codigo LIKE ? OR pf.nombre LIKE ? OR pf.tipo_cp LIKE ?)';
     vals.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
@@ -290,7 +331,10 @@ function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
   const rows = db.prepare(sql).all(...vals)
     .filter(row => mesNumero(row.mes) === mes)
     .filter(row => row.cp_id)
+    .filter(row => !proyeccionDescartada(row.id))
     .filter(row => {
+      const tipo = normalizarTipoImpuesto(row.tipo_impuesto);
+      if (!TIPOS_IMPUESTO_VALIDOS.includes(tipo)) return true;
       const existing = db.prepare(`
         SELECT sf.id
         FROM solicitud_factura sf
@@ -299,8 +343,9 @@ function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
           AND sf.cliente_id = ?
           AND sf.periodo = ?
           AND sc.cp_id = ?
+          AND sf.empresa_emisora = ?
         LIMIT 1
-      `).get(row.cliente_id, periodo, row.cp_id);
+      `).get(row.cliente_id, periodo, row.cp_id, EMPRESA_EMISORA_UNICA);
       return !existing;
     });
 
@@ -316,16 +361,19 @@ function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
     cliente_nombre: row.cliente || row.cliente_nombre,
     coordinador_id: coord ? coord.id : null,
     coordinador_nombre: coord ? coord.nombre : null,
-    empresa_emisora: empresaDesdeCodigoFacturacion(row.codigo_facturacion),
+    empresa_emisora: empresaDesdeTipoImpuesto(row.tipo_impuesto, row.codigo_facturacion),
     periodo,
     glosa: row.nombre || '',
     monto_neto_clp: 0,
     monto_iva_clp: 0,
     monto_total_clp: 0,
+    monto_uf: Number(row.monto_uf) || 0,
     estado: row.estado || 'PENDIENTE OC / HES',
     cp_codigo: row.codigo,
     cp_nombre: row.nombre,
     tipo_cp: row.tipo_cp,
+    tipo_impuesto: normalizarTipoImpuesto(row.tipo_impuesto),
+    tipo_impuesto_invalido: !tipoImpuestoValido(row.tipo_impuesto),
     codigo_facturacion: row.codigo_facturacion,
     created_at: row.updated_at
   };
@@ -333,25 +381,28 @@ function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
 }
 
 r.get('/', (req, res) => {
-  const { clienteId, estado, periodo, tipo, q, includeProyecciones } = req.query;
-  let sql = `SELECT sf.*, c.nombre_corto as cliente_nombre, co.nombre as coordinador_nombre
+  const { clienteId, estado, periodo, tipo, q } = req.query;
+  let sql = `SELECT sf.*, c.nombre_corto as cliente_nombre, co.nombre as coordinador_nombre,
+      COALESCE((
+        SELECT SUM(COALESCE(sc.monto_uf, 0))
+        FROM solicitud_cp sc
+        WHERE sc.solicitud_id = sf.id
+      ), 0) as monto_uf
     FROM solicitud_factura sf
     JOIN cliente c ON c.id = sf.cliente_id
     LEFT JOIN coordinador co ON co.id = sf.coordinador_id
-    WHERE sf.is_delete = 0`;
-  const vals = [];
+    WHERE sf.is_delete = 0
+      AND sf.empresa_emisora = ?`;
+  const vals = [EMPRESA_EMISORA_UNICA];
   if (clienteId) { sql += ' AND sf.cliente_id = ?'; vals.push(clienteId); }
-  if (estado)    { sql += ' AND sf.estado = ?'; vals.push(estado); }
+  if (estado)    { sql += ' AND sf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
   if (periodo)   { sql += ' AND sf.periodo = ?'; vals.push(periodo); }
   if (tipo)      { sql += ' AND sf.tipo = ?'; vals.push(tipo); }
   if (q)         { sql += ' AND (sf.folio LIKE ? OR sf.glosa LIKE ? OR c.nombre_corto LIKE ?)'; vals.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   sql += ' ORDER BY sf.created_at DESC LIMIT 200';
   const reales = db.prepare(sql).all(...vals).map(aplicarCoordinadorSugerido);
-  const proyecciones = includeProyecciones === '1'
-    ? proyeccionesParaSolicitudes({ clienteId, estado, periodo, q })
-    : [];
 
-  ok(res, [...reales, ...proyecciones].sort((a, b) => {
+  ok(res, reales.sort((a, b) => {
     const estadoA = estadoPrioridadSolicitud(a.estado);
     const estadoB = estadoPrioridadSolicitud(b.estado);
     return estadoA - estadoB || String(a.cliente_nombre || '').localeCompare(String(b.cliente_nombre || ''), 'es');
@@ -361,14 +412,17 @@ r.get('/', (req, res) => {
 function estadoPrioridadSolicitud(estado) {
   if (estado === 'PENDIENTE OC / HES') return 1;
   if (estado === 'FACTURA SOLICITADA') return 2;
-  if (estado === 'FACTURADO') return 3;
-  return 4;
+  return 3;
 }
 
 r.post('/', (req, res) => {
   const b = req.body;
+  b.empresa_emisora = b.empresa_emisora || EMPRESA_EMISORA_UNICA;
   if (!b.cliente_id || !b.empresa_emisora || !b.periodo)
     return fail(res, 'VALIDATION_ERROR', 'Faltan campos obligatorios: cliente_id, empresa_emisora, periodo');
+  if (!validarEmpresaEmisoraUnica(b.empresa_emisora))
+    return fail(res, 'VALIDATION_ERROR', 'Solo se permiten solicitudes de MAS CONSULTORES');
+  b.empresa_emisora = EMPRESA_EMISORA_UNICA;
   if (b.coordinador_id && !coordinadorActivo(b.coordinador_id))
     return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
 
@@ -425,82 +479,36 @@ r.post('/', (req, res) => {
       .run(uuidv4(), id, null, estadoInicial, b._usuario||'sistema', 'Solicitud creada');
   });
   ins();
+  audit.log(req, 'crear', 'solicitud_factura', id, { folio, periodo: b.periodo, cliente_id: b.cliente_id });
 
   ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(id)), 201);
 });
 
 r.post('/proyecciones/:id/materializar', (req, res) => {
-  const pf = db.prepare('SELECT * FROM proyeccion_facturacion WHERE id = ?').get(req.params.id);
-  if (!pf) return notFound(res, 'Proyeccion no encontrada');
-
-  const periodo = periodoDesdeProyeccion(pf);
-  if (!periodo) return fail(res, 'VALIDATION_ERROR', 'La proyeccion no tiene mes/anio valido');
-
-  const cp = db.prepare(`
-    SELECT id
-    FROM cp
-    WHERE cliente_id = ?
-      AND codigo = ?
-      AND activo = 1
-  `).get(pf.cliente_id, pf.codigo);
-  if (!cp) return fail(res, 'VALIDATION_ERROR', 'La proyeccion no tiene un CP activo asociado');
-
-  const existing = db.prepare(`
-    SELECT sf.*
-    FROM solicitud_factura sf
-    JOIN solicitud_cp sc ON sc.solicitud_id = sf.id
-    WHERE sf.is_delete = 0
-      AND sf.cliente_id = ?
-      AND sf.periodo = ?
-      AND sc.cp_id = ?
-    LIMIT 1
-  `).get(pf.cliente_id, periodo, cp.id);
-  if (existing) return ok(res, hydrateOne(existing));
-
-  const id = uuidv4();
-  const estado = normalizarEstadoSolicitud(pf.estado || 'PENDIENTE OC / HES');
-  const empresa = empresaDesdeCodigoFacturacion(pf.codigo_facturacion);
-  if (!db.prepare('SELECT codigo FROM empresa_emisora WHERE codigo = ?').get(empresa)) {
-    return fail(res, 'VALIDATION_ERROR', `Empresa emisora no configurada: ${empresa}`);
-  }
-  const coord = coordinadorPorClienteYCPNombre(pf.cliente_id, pf.nombre);
-  const folio = generarFolio();
-  const montoUF = Number(pf.monto_uf) || null;
-
-  const tx = db.transaction(() => {
-    db.prepare(`INSERT INTO solicitud_factura
-      (id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
-       glosa, moneda_base, monto_neto_clp, monto_iva_clp, monto_total_clp, observaciones, estado)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, folio, 'mensual', pf.cliente_id, coord ? coord.id : null, empresa, periodo, new Date().toISOString().slice(0,10),
-        pf.nombre || '', 'UF', 0, 0, 0, pf.observaciones || null, estado);
-
-    db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?,?,?,?,?,?)')
-      .run(uuidv4(), id, cp.id, montoUF, 0, 0);
-
-    insertarReceptoresSolicitud(id, receptoresPayloadODefecto(req.body?.receptores, pf.cliente_id));
-
-    db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)')
-      .run(uuidv4(), id, null, estado, req.body?._usuario || 'sistema', `Creada desde proyeccion ${pf.id}`);
-  });
-  tx();
-
-  ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(id)), 201);
+  return fail(res, 'PROYECCIONES_DISABLED', 'Las proyecciones no se utilizan en este proyecto', null, 410);
 });
 
 r.get('/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM solicitud_factura WHERE (id = ? OR folio = ?) AND is_delete = 0').get(req.params.id, req.params.id);
+  const row = db.prepare(`
+    SELECT * FROM solicitud_factura
+    WHERE (id = ? OR folio = ?)
+      AND is_delete = 0
+      AND empresa_emisora = ?
+  `).get(req.params.id, req.params.id, EMPRESA_EMISORA_UNICA);
   if (!row) return notFound(res);
   ok(res, hydrateOne(row));
 });
 
 r.patch('/:id', (req, res) => {
-  const sol = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
+  const sol = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
   if (!sol) return notFound(res);
   if (!puedeEditar(sol.estado))
     return fail(res, 'STATE_TRANSITION_INVALID', `No se puede editar una solicitud en estado "${sol.estado}"`);
 
   const b = req.body;
+  if (b.empresa_emisora !== undefined && !validarEmpresaEmisoraUnica(b.empresa_emisora))
+    return fail(res, 'VALIDATION_ERROR', 'Solo se permiten solicitudes de MAS CONSULTORES');
+  if (b.empresa_emisora !== undefined) b.empresa_emisora = EMPRESA_EMISORA_UNICA;
   if (b.coordinador_id && !coordinadorActivo(b.coordinador_id))
     return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
   const cpsParaTotales = b.cps !== undefined
@@ -607,30 +615,38 @@ r.patch('/:id', (req, res) => {
     db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)')
       .run(uuidv4(), req.params.id, sol.estado, estadoNuevo, b._usuario||'sistema', 'Estado actualizado desde formulario');
   }
+  audit.log(req, 'editar', 'solicitud_factura', req.params.id, {
+    folio: sol.folio,
+    fields: Object.keys(b).filter(k => k !== '_usuario')
+  });
 
   ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id)));
 });
 
 r.delete('/:id', (req, res) => {
-  const sol = db.prepare('SELECT id, folio FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
+  const sol = db.prepare('SELECT id, folio FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
   if (!sol) return notFound(res);
   db.prepare("UPDATE solicitud_factura SET is_delete = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
+  audit.log(req, 'eliminar', 'solicitud_factura', req.params.id, { folio: sol.folio });
   ok(res, { id: sol.id, folio: sol.folio });
 });
 
 r.post('/:id/estado', (req, res) => {
   const { hacia, comentario } = req.body;
   if (!hacia) return fail(res, 'VALIDATION_ERROR', '"hacia" es requerido');
+  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
+  if (!row) return notFound(res);
   try {
     cambiarEstado(req.params.id, hacia, req.body._usuario || 'usuario', comentario);
-    ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id)));
+    audit.log(req, 'cambiar_estado', 'solicitud_factura', req.params.id, { hacia, comentario });
+    ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA)));
   } catch (e) {
     fail(res, e.code || 'ERROR', e.message);
   }
 });
 
 r.post('/:id/duplicar', (req, res) => {
-  const orig = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
+  const orig = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
   if (!orig) return notFound(res);
   const newId = uuidv4();
   const newFolio = generarFolio();
@@ -663,12 +679,13 @@ r.post('/:id/duplicar', (req, res) => {
       .run(uuidv4(), newId, null, 'PENDIENTE OC / HES', 'sistema', `Duplicada desde ${orig.folio}`);
   });
   dup();
+  audit.log(req, 'duplicar', 'solicitud_factura', newId, { desde: orig.id, folio_origen: orig.folio, folio: newFolio });
 
   ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(newId)), 201);
 });
 
 r.get('/:id/historial', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
+  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
   if (!row) return notFound(res);
   ok(res, db.prepare('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC').all(req.params.id));
 });

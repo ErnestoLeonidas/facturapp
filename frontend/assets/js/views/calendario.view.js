@@ -1,4 +1,4 @@
-window.CalendarioView = {
+﻿window.CalendarioView = {
   _meses: [
     'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
     'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
@@ -47,7 +47,7 @@ window.CalendarioView = {
                 <th>Código</th>
                 <th>Nombre</th>
                 <th>Tipo de CP</th>
-                <th>Facturacion</th>
+                <th>Facturación</th>
                 <th>Estado</th>
               </tr>
             </thead>
@@ -134,3 +134,4 @@ window.CalendarioView = {
     $('[data-cell-mes]').toggle(!ocultarMes);
   }
 };
+

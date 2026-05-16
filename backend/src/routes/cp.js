@@ -2,11 +2,16 @@ const r = require('express').Router();
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
-
-const TIPOS_CP = ['Administración y Operación', 'Construcción', 'Horas de Desarrollo'];
+const { upperName } = require('../db-normalize-names');
 
 function validarTipoCP(tipoCp) {
-  return TIPOS_CP.includes(tipoCp);
+  return !!db.prepare(`
+    SELECT codigo
+    FROM catalogo_tipo_cp
+    WHERE activo = 1
+      AND (codigo = ? OR nombre = ?)
+    LIMIT 1
+  `).get(tipoCp, tipoCp);
 }
 
 r.get('/', (req, res) => {
@@ -27,7 +32,7 @@ r.post('/', (req, res) => {
   if (!validarTipoCP(tipo_cp)) return fail(res, 'VALIDATION_ERROR', 'tipo_cp inválido');
   if (!cliente_id) return fail(res, 'VALIDATION_ERROR', 'cliente_id es requerido');
   const id = uuidv4();
-  db.prepare('INSERT INTO cp (id, codigo, nombre, tipo_cp, area, cliente_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, codigo, nombre || null, tipo_cp, area || null, cliente_id || null);
+  db.prepare('INSERT INTO cp (id, codigo, nombre, tipo_cp, area, cliente_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, codigo, upperName(nombre) || null, tipo_cp, area || null, cliente_id || null);
   ok(res, db.prepare('SELECT * FROM cp WHERE id = ?').get(id), 201);
 });
 
@@ -42,7 +47,7 @@ r.patch('/:id', (req, res) => {
   }
   if (nombre !== undefined)    {
     if (!nombre) return fail(res, 'VALIDATION_ERROR', 'nombre es requerido');
-    sets.push('nombre=?'); vals.push(nombre);
+    sets.push('nombre=?'); vals.push(upperName(nombre));
   }
   if (tipo_cp !== undefined)   {
     if (!tipo_cp) return fail(res, 'VALIDATION_ERROR', 'tipo_cp es requerido');

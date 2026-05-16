@@ -3,6 +3,7 @@ const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { pushMasterAsync } = require('../services/masterAutoSync');
+const { upperName } = require('../db-normalize-names');
 
 r.get('/', (req, res) => {
   const { clienteId } = req.query;
@@ -14,7 +15,7 @@ r.post('/', (req, res) => {
   const { cliente_id, nombre, email, cargo } = req.body;
   if (!cliente_id || !nombre || !email) return fail(res, 'VALIDATION_ERROR', 'cliente_id, nombre y email son requeridos');
   const id = uuidv4();
-  db.prepare('INSERT INTO receptor (id, cliente_id, nombre, email, cargo) VALUES (?, ?, ?, ?, ?)').run(id, cliente_id, nombre, email, cargo || null);
+  db.prepare('INSERT INTO receptor (id, cliente_id, nombre, email, cargo) VALUES (?, ?, ?, ?, ?)').run(id, cliente_id, upperName(nombre), email, cargo || null);
   pushMasterAsync('receptor creado');
   ok(res, db.prepare('SELECT * FROM receptor WHERE id = ?').get(id), 201);
 });
@@ -24,7 +25,7 @@ r.patch('/:id', (req, res) => {
   if (!row) return notFound(res);
   const { nombre, email, cargo, activo } = req.body;
   const sets = []; const vals = [];
-  if (nombre !== undefined)  { sets.push('nombre=?'); vals.push(nombre); }
+  if (nombre !== undefined)  { sets.push('nombre=?'); vals.push(upperName(nombre)); }
   if (email !== undefined)   { sets.push('email=?'); vals.push(email); }
   if (cargo !== undefined)   { sets.push('cargo=?'); vals.push(cargo); }
   if (activo !== undefined)  { sets.push('activo=?'); vals.push(activo ? 1 : 0); }

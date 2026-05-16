@@ -3,6 +3,7 @@ const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { pushMasterAsync } = require('../services/masterAutoSync');
+const { upperName } = require('../db-normalize-names');
 
 function hydrate(row) {
   if (!row) return null;
@@ -54,7 +55,7 @@ r.post('/', (req, res) => {
   const id = uuidv4();
   db.prepare(`INSERT INTO cliente (id, nombre_corto, razon_social, rut, giro, direccion, coordinador_id,
     frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, nombre_corto, razon_social||null, rut||null, giro||null, direccion||null, coordinador_id||null,
+    .run(id, upperName(nombre_corto), upperName(razon_social)||null, rut||null, giro||null, direccion||null, coordinador_id||null,
       frecuencia||'Mensual', dia_facturacion||null, mes_inicio||null, requiere_hes ? 1 : 0, estado||'Activo', notas||null);
   pushMasterAsync('cliente creado');
   ok(res, hydrate(db.prepare('SELECT * FROM cliente WHERE id = ?').get(id)), 201);
@@ -75,7 +76,9 @@ r.patch('/:id', (req, res) => {
   fields.forEach(f => {
     if (req.body[f] !== undefined) {
       sets.push(`${f}=?`);
-      vals.push(f === 'requiere_hes' ? (req.body[f] ? 1 : 0) : req.body[f]);
+      vals.push(f === 'requiere_hes'
+        ? (req.body[f] ? 1 : 0)
+        : ['nombre_corto', 'razon_social'].includes(f) ? upperName(req.body[f]) : req.body[f]);
     }
   });
   if (sets.length) {

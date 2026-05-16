@@ -40,7 +40,7 @@ r.post('/solicitud/:id', async (req, res, next) => {
     JOIN cliente c ON c.id = sf.cliente_id
     WHERE sf.id=? AND sf.is_delete = 0`).get(req.params.id);
   if (!sol) return notFound(res);
-  if (!['FACTURA SOLICITADA','FACTURADO','Aprobada','Emitida','Facturada','Cerrada'].includes(sol.estado))
+  if (!['FACTURA SOLICITADA','Aprobada','Emitida','Facturada','Cerrada'].includes(sol.estado))
     return fail(res, 'VALIDATION_ERROR', `Solo se puede exportar desde estado FACTURA SOLICITADA o superior. Estado actual: ${sol.estado}`);
 
   try {

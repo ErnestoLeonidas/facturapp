@@ -9,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(require('./services/auth').attachUser);
 
 // API
 app.use('/api', require('./routes/index'));
@@ -23,6 +24,11 @@ app.use(require('./middleware/errors'));
 
 app.listen(PORT, () => {
   console.log(`FacturApp corriendo en http://localhost:${PORT}`);
+
+  const { warmUFCacheDesde2026 } = require('./services/uf');
+  warmUFCacheDesde2026()
+    .then(result => console.log(`Cache UF precargado desde ${result.from} hasta ${result.to}: ${result.saved} registros`))
+    .catch(e => console.warn('No se pudo precargar cache UF:', e.message));
 });
 
 module.exports = app;

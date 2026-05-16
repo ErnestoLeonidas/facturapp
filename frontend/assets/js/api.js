@@ -8,9 +8,11 @@ window.Api = (function () {
   }
 
   function request(method, path, body) {
+    const token = window.AuthService && AuthService.token && AuthService.token();
     return $.ajax({
       method,
       url: AppConfig.apiBase + path,
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
       contentType: 'application/json',
       data: body ? JSON.stringify(body) : undefined,
       dataType: 'json'

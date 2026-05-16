@@ -5,7 +5,7 @@ window.Validators = {
     if (!s.empresa_emisora) errs.push('Falta seleccionar "Facturar Por".');
     if (!s.periodo)         errs.push('Falta periodo.');
 
-    if (['FACTURA SOLICITADA', 'FACTURADO'].includes(s.estado)) {
+    if (s.estado === 'FACTURA SOLICITADA') {
       if (!s.coordinador_id) errs.push('Falta encargado de solicitud.');
       if (!s.glosa)          errs.push('Falta glosa.');
       if (!s.observaciones)  errs.push('Falta observaciones.');

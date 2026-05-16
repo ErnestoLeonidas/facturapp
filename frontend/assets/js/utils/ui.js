@@ -69,6 +69,7 @@ window.UI = {
   },
 
   estadoChip(estado) {
-    return '<span class="estado-chip ' + UI.estadoClass(estado) + '">' + estado + '</span>';
+    const visible = estado === 'FACTURADO' ? 'FACTURA SOLICITADA' : estado;
+    return '<span class="estado-chip ' + UI.estadoClass(visible) + '">' + visible + '</span>';
   }
 };

@@ -2,6 +2,7 @@ const axios = require('axios');
 const ExcelJS = require('exceljs');
 const db = require('../db');
 const { rowsFromValues } = require('./googleSheetsSync');
+const { upperName } = require('../db-normalize-names');
 
 const DEFAULT_MASTER_ID = '1es6Jk8hmqwz7gcrz84jI_u8dDvfO2l9W5W5g9sf-wF4';
 
@@ -29,7 +30,7 @@ function normalizarContacto(nombreRaw, emailRaw) {
   }
 
   if (!nombre && email) nombre = email.split('@')[0].replace(/[._-]+/g, ' ');
-  return { nombre, email };
+  return { nombre: upperName(nombre), email };
 }
 
 function cellValue(cell) {
@@ -86,7 +87,7 @@ function upsertCliente(row) {
           estado = CASE WHEN estado IS NULL OR estado = '' THEN 'Activo' ELSE estado END,
           updated_at = datetime('now')
       WHERE id = ?
-    `).run(clean(row.razon_social), clean(row.rut), clean(row.giro), clean(row.direccion), id);
+    `).run(upperName(clean(row.razon_social)), clean(row.rut), clean(row.giro), clean(row.direccion), id);
     return true;
   }
 
@@ -95,8 +96,8 @@ function upsertCliente(row) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
-    clean(row.razon_social) || nombreDesdeClienteId(id) || id,
-    clean(row.razon_social),
+    upperName(clean(row.razon_social) || nombreDesdeClienteId(id) || id),
+    upperName(clean(row.razon_social)),
     clean(row.rut),
     clean(row.giro),
     clean(row.direccion),
@@ -140,7 +141,7 @@ function upsertReceptor(row) {
 
 function upsertCoordinador(row) {
   const id = clean(row.coordinador_id);
-  const nombre = clean(row.nombre);
+  const nombre = upperName(clean(row.nombre));
   if (!id || !nombre) return false;
 
   const existing = db.prepare('SELECT id FROM coordinador WHERE id = ?').get(id);
@@ -168,14 +169,14 @@ function upsertEmpresa(row) {
           rut = COALESCE(?, rut),
           giro = COALESCE(?, giro)
       WHERE codigo = ?
-    `).run(razonSocial, clean(row.rut), clean(row.giro), codigo);
+    `).run(upperName(razonSocial), clean(row.rut), clean(row.giro), codigo);
     return true;
   }
 
   db.prepare(`
     INSERT INTO empresa_emisora (codigo, razon_social, rut, giro, afecto_iva, iva_pct)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(codigo, razonSocial, clean(row.rut), clean(row.giro), ['MAS_CAPACITACION', 'MAS_CAPACITACIONES'].includes(codigo) ? 0 : 1, 0.19);
+  `).run(codigo, upperName(razonSocial), clean(row.rut), clean(row.giro), ['MAS_CAPACITACION', 'MAS_CAPACITACIONES'].includes(codigo) ? 0 : 1, 0.19);
   return true;
 }
 

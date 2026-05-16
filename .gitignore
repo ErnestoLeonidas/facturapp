@@ -25,6 +25,7 @@ google-credentials.json
 *.sqlite-*
 *.db
 *.db-*
+backend/backups/
 backend/storage/
 storage/
 

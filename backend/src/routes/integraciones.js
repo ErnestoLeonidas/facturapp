@@ -34,13 +34,15 @@ r.get('/google-sheets/estado', (req, res) => {
     baseFacturacionId: process.env.GOOGLE_SHEETS_BASE_FACTURACION_ID || '1YFn9QfyIympuqS7zeF2jtfSjOTwBI184CP4mkRUB4V0',
     baseFacturacionRange: process.env.GOOGLE_SHEETS_BASE_FACTURACION_RANGE || 'A:O',
     masterFacturacionId: process.env.GOOGLE_SHEETS_MASTER_FACTURACION_ID || '1es6Jk8hmqwz7gcrz84jI_u8dDvfO2l9W5W5g9sf-wF4',
-    proyeccionesId: process.env.GOOGLE_SHEETS_PROYECCIONES_ID || null,
     logs
   });
 });
 
 r.post('/google-sheets/sync', async (req, res) => {
   const dataset = req.query.dataset || 'base_facturacion';
+  if (dataset === 'proyecciones') {
+    return fail(res, 'PROYECCIONES_DISABLED', 'Las proyecciones no se utilizan en este proyecto', null, 410);
+  }
   const logId = integrationLog.start('google_sheets', dataset);
 
   try {

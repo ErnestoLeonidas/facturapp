@@ -1,6 +1,7 @@
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { getClients } = require('./google');
+const { upperName } = require('../db-normalize-names');
 
 const DEFAULT_BASE_RANGE = 'A:O';
 
@@ -68,7 +69,7 @@ async function batchGet(spreadsheetId, ranges) {
 }
 
 function upsertCliente(row) {
-  const nombre = clean(row.cliente);
+  const nombre = upperName(clean(row.cliente));
   if (!nombre) return null;
 
   const externalId = clean(row.cliente_id);
@@ -95,7 +96,7 @@ function upsertCliente(row) {
 }
 
 function upsertProducto(nombre) {
-  const productName = clean(nombre);
+  const productName = upperName(clean(nombre));
   if (!productName) return null;
   const existing = db.prepare('SELECT id FROM producto WHERE nombre = ? AND activo = 1').get(productName);
   if (existing) return existing.id;
@@ -115,9 +116,9 @@ function linkClienteProducto(clienteId, productoId, row) {
       condiciones = excluded.condiciones
   `).run(uuidv4(), clienteId, productoId, JSON.stringify({
     source: clean(row.source) || 'google_sheets_base_facturacion',
-    cliente: clean(row.cliente),
+    cliente: upperName(clean(row.cliente)),
     codigo: clean(row.codigo),
-    nombre: clean(row.nombre),
+    nombre: upperName(clean(row.nombre)),
     tipo_cp: clean(row.tipo_cp),
     tipo_impuesto: clean(row.tipo_impuesto),
     moneda: clean(row.moneda),
@@ -135,10 +136,21 @@ function projectionId(row, clienteId) {
     clienteId,
     clean(row.codigo),
     clean(row.nombre),
+    normalizarTipoImpuesto(row.tipo_impuesto),
     clean(row.anio),
     clean(row.mes),
     clean(row.codigo_facturacion)
   ].filter(Boolean).join('|') || uuidv4();
+}
+
+const TIPOS_IMPUESTO_VALIDOS = ['AFECTO_IVA'];
+
+function normalizarTipoImpuesto(value) {
+  return String(clean(value) || '').toUpperCase();
+}
+
+function tipoImpuestoValido(value) {
+  return TIPOS_IMPUESTO_VALIDOS.includes(normalizarTipoImpuesto(value));
 }
 
 function upsertProyeccion(row, clienteId) {
@@ -170,11 +182,11 @@ function upsertProyeccion(row, clienteId) {
   `).run(
     id,
     clienteId,
-    clean(row.cliente),
+    upperName(clean(row.cliente)),
     clean(row.codigo),
-    clean(row.nombre),
+    upperName(clean(row.nombre)),
     clean(row.tipo_cp),
-    clean(row.tipo_impuesto),
+    normalizarTipoImpuesto(row.tipo_impuesto),
     clean(row.mes),
     Number(clean(row.anio)) || null,
     parseNumber(row.monto_uf),
@@ -192,7 +204,7 @@ function upsertCP(row, clienteId) {
   const codigo = clean(row.codigo);
   if (!codigo || !clienteId) return null;
 
-  const nombre = clean(row.nombre);
+  const nombre = upperName(clean(row.nombre));
   const existing = db.prepare('SELECT id FROM cp WHERE codigo = ?').get(codigo);
   if (existing) {
     db.prepare(`
@@ -230,6 +242,7 @@ function applyBaseFacturacionRows(rows, source = 'google_sheets_base_facturacion
       if (!clean(row.cliente)) missing.push('cliente');
       if (!clean(row.codigo)) missing.push('codigo');
       if (!clean(row.nombre)) missing.push('nombre');
+      if (!tipoImpuestoValido(row.tipo_impuesto)) missing.push('tipo_impuesto invalido: usa AFECTO_IVA');
       if (missing.length) {
         stats.omitidas.push({ fila: index + 2, missing });
         return;
@@ -295,7 +308,11 @@ async function sync(dataset) {
   if (!dataset || dataset === 'base_facturacion' || dataset === 'clientes' || dataset === 'cp') {
     return syncBaseFacturacion();
   }
-  if (dataset === 'proyecciones') return syncProyecciones();
+  if (dataset === 'proyecciones') {
+    const err = new Error('Las proyecciones no se utilizan en este proyecto.');
+    err.code = 'PROYECCIONES_DISABLED';
+    throw err;
+  }
 
   const err = new Error(`Dataset no soportado: ${dataset}`);
   err.code = 'VALIDATION_ERROR';

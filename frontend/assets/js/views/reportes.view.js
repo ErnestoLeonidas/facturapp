@@ -218,14 +218,12 @@ window.ConfiguracionView = {
           <button class="btn btn-sm btn-outline-primary" id="btn-push-master-sheets">Enviar master a Excel</button>
           <button class="btn btn-sm btn-outline-success" id="btn-import-base-excel">Importar Excel base</button>
           <button class="btn btn-sm btn-outline-success" id="btn-import-master-excel">Importar master</button>
-          <button class="btn btn-sm btn-outline-secondary" id="btn-sync-proy">Sync proyecciones</button>
         </div>`);
       $('#btn-sync-base').on('click', () => ConfiguracionView._syncSheets('base_facturacion'));
       $('#btn-refresh-master-sheets').on('click', () => ConfiguracionView._refreshMasterSheets());
       $('#btn-push-master-sheets').on('click', () => ConfiguracionView._pushMasterSheets());
       $('#btn-import-base-excel').on('click', () => ConfiguracionView._importBaseExcel());
       $('#btn-import-master-excel').on('click', () => ConfiguracionView._importMasterExcel());
-      $('#btn-sync-proy').on('click', () => ConfiguracionView._syncSheets('proyecciones'));
     }).fail(() => $('#sheets-estado').html('<small class="text-danger">No disponible</small>'));
 
     IntegracionesService.plantillaDrive().then(d => {

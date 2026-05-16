@@ -136,6 +136,22 @@ npm start          # http://localhost:3000
 - [ ] Bitácora de integración (`uf_cache`, sync logs).
 - [ ] Filtros guardados por usuario.
 
+**Implementacion BD SQLite (pasos a seguir):**
+- [x] Definir `DB_PATH` por ambiente (`backend/storage/facturapp.sqlite` en local, volumen persistente en produccion).
+- [x] Separar el schema actual de `backend/src/db.js` en migraciones versionadas dentro de `backend/migrations/`.
+- [x] Crear tabla de control `schema_migrations` con `version`, `name`, `applied_at` y checksum opcional.
+- [x] Implementar runner de migraciones idempotente (`npm run migrate`) que ejecute solo migraciones pendientes y falle con mensaje claro.
+- [x] Mantener `node:sqlite` como driver principal para evitar dependencias nativas y conservar compatibilidad actual.
+- [x] Revisar y formalizar constraints/indices para tablas criticas: `solicitud_factura`, `solicitud_cp`, `proyeccion_facturacion`, `cliente`, `cp`, `historial_estado`, `documento_exportado`, `bitacora_integracion`.
+- [x] Crear migraciones para campos ya usados por integraciones y finanzas: `tipo_impuesto`, `codigo_facturacion`, `monto_uf`, `uf_fecha`, `uf_valor`, `version_plantilla`, `is_delete`.
+- [x] Normalizar catalogos operativos en SQLite: estados de solicitud, empresas emisoras, tipos de impuesto (`AFECTO_IVA`, `EXENTO_IVA`) y tipos de CP.
+- [x] Agregar script de backup local (`npm run db:backup`) que copie la base a `backend/backups/` con timestamp antes de syncs o migraciones.
+- [x] Agregar script de restore documentado para recuperar una copia de seguridad en ambiente local/controlado.
+- [x] Ajustar seed para que sea idempotente: upsert de clientes, coordinadores, empresas, CPs y datos base sin duplicar.
+- [x] Documentar procedimiento operativo en `backend/README.md`: crear BD, migrar, seed, backup, restore y variables requeridas.
+- [x] Validar integridad con consultas de humo: conteo de clientes, CPs sin cliente, solicitudes sin CP, proyecciones sin mes/anio, solicitudes con folio duplicado.
+- [ ] Preparar criterio de evolucion futura a Postgres: mantener SQL simple, evitar funciones SQLite no portables salvo en migraciones encapsuladas.
+
 **Avance integraciones Google:**
 - [x] Dependencia `googleapis` instalada en backend.
 - [x] Cliente Service Account backend-only para Sheets y Drive.

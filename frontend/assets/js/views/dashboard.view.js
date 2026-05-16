@@ -16,7 +16,7 @@ window.DashboardView = {
               <a href="#/solicitudes" class="btn btn-sm btn-outline-primary">Ver todas</a>
             </div>
             <div class="table-responsive"><table class="table mb-0 align-middle table-hover">
-              <thead><tr><th>Folio</th><th>Cliente</th><th>Período</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Cliente</th><th>Período</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
               <tbody id="dash-recientes"></tbody>
             </table></div>
           </div>
@@ -33,8 +33,8 @@ window.DashboardView = {
     SolicitudesService.list({ limit: 10 }).then(data => {
       const rows = Array.isArray(data) ? data : (data.items || data);
       const rev   = rows.filter(s => ['PENDIENTE OC / HES','EnRevision'].includes(s.estado)).length;
-      const emit  = rows.filter(s => ['FACTURA SOLICITADA','FACTURADO','Aprobada','Emitida','Facturada'].includes(s.estado)).length;
-      const adic  = rows.filter(s => s.tipo === 'adicional' && !['FACTURADO','Cerrada','Anulada'].includes(s.estado)).length;
+      const emit  = rows.filter(s => ['FACTURA SOLICITADA','Aprobada','Emitida','Facturada'].includes(s.estado)).length;
+      const adic  = rows.filter(s => s.tipo === 'adicional' && !['Cerrada','Anulada'].includes(s.estado)).length;
       $('[data-kpi=revision]').text(rev);
       $('[data-kpi=emitidas]').text(emit);
       $('[data-kpi=adicionales]').text(adic);
@@ -42,12 +42,11 @@ window.DashboardView = {
 
       $('#dash-recientes').html(rows.slice(0,8).map(s => `
         <tr style="cursor:pointer" onclick="location.hash='#/solicitudes/${s.id}'">
-          <td><code>${s.folio}</code></td>
           <td>${s.cliente_nombre || ''}</td>
           <td>${s.periodo}</td>
           <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
           <td>${UI.estadoChip(s.estado)}</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="text-center text-muted py-3">Sin solicitudes</td></tr>');
+        </tr>`).join('') || '<tr><td colspan="4" class="text-center text-muted py-3">Sin solicitudes</td></tr>');
 
       const estadoMap = {};
       rows.forEach(s => { estadoMap[s.estado] = (estadoMap[s.estado]||0) + 1; });
