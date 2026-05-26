@@ -26,7 +26,7 @@ Este repo contiene el plan, los contratos y el esqueleto para iniciar Fase 1.
 
 - **Frontend**: HTML + Bootstrap 5 + jQuery + JS modular. Hash routing. Servido como estático.
 - **Backend**: Node.js + Express. Postgres recomendado (SQLite válido para fase 1).
-- **Integraciones**: mindicador.cl (UF) vía proxy propio; Google Sheets/Drive con Service Account (backend-only).
+- **Integraciones**: UF oficial SII vía proxy propio con fallback externo; Google Sheets/Drive con Service Account (backend-only).
 - **Exportación**: `exceljs` para regenerar la plantilla XLSX idéntica.
 
 ## Empezar Fase 1

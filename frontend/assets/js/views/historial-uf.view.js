@@ -1,5 +1,5 @@
 window.HistorialUfView = {
-  _anioDisponible: 2026,
+  _anioDisponible: new Date().getFullYear(),
   _meses: [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -136,9 +136,8 @@ window.HistorialUfView = {
 
   _formatValor(value) {
     if (value == null || isNaN(value)) return '';
-    return Number(value).toLocaleString('es-CL', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+    return Math.round(Number(value)).toLocaleString('es-CL', {
+      maximumFractionDigits: 0
     });
   },
 

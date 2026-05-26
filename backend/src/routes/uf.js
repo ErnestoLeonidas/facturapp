@@ -5,9 +5,10 @@ const { ok, fail } = require('../middleware/envelope');
 r.get('/historial', async (req, res, next) => {
   const anio = Number(req.query.anio);
   const mes = Number(req.query.mes);
+  const anioMaximo = new Date().getFullYear() + 1;
 
-  if (anio !== 2026) {
-    return fail(res, 'VALIDATION_ERROR', 'Por ahora el historial UF solo esta disponible para 2026');
+  if (!Number.isInteger(anio) || anio < 2026 || anio > anioMaximo) {
+    return fail(res, 'VALIDATION_ERROR', `anio debe ser un numero entre 2026 y ${anioMaximo}`);
   }
   if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
     return fail(res, 'VALIDATION_ERROR', 'mes debe ser un numero entre 1 y 12');

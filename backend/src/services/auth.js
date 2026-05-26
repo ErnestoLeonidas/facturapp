@@ -12,6 +12,7 @@ function publicUser(user) {
   return {
     id: user.id,
     nombre: user.nombre,
+    username: user.username || user.email,
     email: user.email,
     rol: user.rol
   };
@@ -32,8 +33,17 @@ function createSession(userId) {
   return token;
 }
 
-function authenticate(email, password) {
-  const user = db.prepare('SELECT * FROM app_user WHERE lower(email) = lower(?) AND activo = 1').get(email);
+function authenticate(identifier, password) {
+  const user = db.prepare(`
+    SELECT *
+    FROM app_user
+    WHERE activo = 1
+      AND (
+        lower(COALESCE(username, email)) = lower(?)
+        OR lower(email) = lower(?)
+      )
+    LIMIT 1
+  `).get(identifier, identifier);
   if (!verifyPassword(user, password)) return null;
   const token = createSession(user.id);
   return { token, user: publicUser(user) };
@@ -66,7 +76,7 @@ function attachUser(req, res, next) {
 
 function requireAuth(req, res, next) {
   if (!req.user) {
-    return res.status(401).json({ ok: false, error: { code: 'AUTH_REQUIRED', message: 'Debes iniciar sesion' } });
+    return res.status(401).json({ ok: false, error: { code: 'AUTH_REQUIRED', message: 'Debes iniciar sesión' } });
   }
   next();
 }
@@ -74,7 +84,7 @@ function requireAuth(req, res, next) {
 function requireRole(role) {
   return (req, res, next) => {
     if (!req.user) {
-      return res.status(401).json({ ok: false, error: { code: 'AUTH_REQUIRED', message: 'Debes iniciar sesion' } });
+      return res.status(401).json({ ok: false, error: { code: 'AUTH_REQUIRED', message: 'Debes iniciar sesión' } });
     }
     if (req.user.rol !== role) {
       return res.status(403).json({ ok: false, error: { code: 'FORBIDDEN', message: 'No tienes permisos para esta accion' } });

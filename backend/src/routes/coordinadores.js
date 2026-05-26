@@ -2,7 +2,6 @@ const r = require('express').Router();
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
-const { pushMasterAsync } = require('../services/masterAutoSync');
 const { upperName } = require('../db-normalize-names');
 
 function normalizarNombre(nombre) {
@@ -39,7 +38,6 @@ r.post('/', (req, res) => {
   if (existeDuplicadoNombre(nombre)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un coordinador con ese nombre');
   const id = uuidv4();
   db.prepare('INSERT INTO coordinador (id, nombre, email, slack_user_id) VALUES (?, ?, ?, ?)').run(id, upperName(nombre), email || null, slack_user_id || null);
-  pushMasterAsync('coordinador creado');
   ok(res, db.prepare('SELECT * FROM coordinador WHERE id = ?').get(id), 201);
 });
 
@@ -59,7 +57,6 @@ r.patch('/:id', (req, res) => {
   if (sets.length) {
     vals.push(req.params.id);
     db.prepare(`UPDATE coordinador SET ${sets.join(',')} WHERE id=?`).run(...vals);
-    pushMasterAsync('coordinador actualizado');
   }
   ok(res, db.prepare('SELECT * FROM coordinador WHERE id = ?').get(req.params.id));
 });
@@ -68,7 +65,6 @@ r.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM coordinador WHERE id = ?').get(req.params.id);
   if (!row) return notFound(res);
   db.prepare('UPDATE coordinador SET activo = 0 WHERE id = ?').run(req.params.id);
-  pushMasterAsync('coordinador desactivado');
   ok(res, { id: req.params.id, activo: 0 });
 });
 

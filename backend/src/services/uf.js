@@ -2,12 +2,54 @@ const axios = require('axios');
 const db = require('../db');
 
 const BASE = process.env.UF_API_BASE || 'https://mindicador.cl/api/uf';
+const SII_BASE = process.env.UF_SII_BASE || 'https://www.sii.cl/valores_y_fechas/uf';
 const CACHE_FROM_YEAR = Number(process.env.UF_CACHE_FROM_YEAR || 2026);
 const CACHE_TO_YEAR = Number(process.env.UF_CACHE_TO_YEAR || 2026);
+const MESES_SII = {
+  enero: 1,
+  febrero: 2,
+  marzo: 3,
+  abril: 4,
+  mayo: 5,
+  junio: 6,
+  julio: 7,
+  agosto: 8,
+  septiembre: 9,
+  octubre: 10,
+  noviembre: 11,
+  diciembre: 12
+};
 
 async function getUF(fecha) {
-  const cached = db.prepare('SELECT valor, obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
-  if (cached) return { fecha, valor: cached.valor, updated_at: cached.obtenido_at, cached: true, source: 'mindicador.cl' };
+  const cached = db.prepare('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
+  if (cached) {
+    return {
+      fecha,
+      valor: cached.valor,
+      updated_at: cached.obtenido_at,
+      cached: true,
+      source: cached.source || 'cache'
+    };
+  }
+
+  const anio = Number(fecha.slice(0, 4));
+  if (Number.isInteger(anio) && anio >= CACHE_FROM_YEAR) {
+    try {
+      await cacheUFYear(anio, fecha);
+      const saved = db.prepare('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
+      if (saved) {
+        return {
+          fecha,
+          valor: saved.valor,
+          updated_at: saved.obtenido_at,
+          cached: false,
+          source: saved.source || 'sii.cl'
+        };
+      }
+    } catch (e) {
+      // Si SII no responde, se usa el fallback por fecha de mindicador.cl.
+    }
+  }
 
   const [d, m, y] = fecha.split('-').reverse().join('-').split('-');
   const url = `${BASE}/${d}-${m}-${y}`;
@@ -25,9 +67,10 @@ async function getUF(fecha) {
       await new Promise(r => setTimeout(r, 500 * (i + 1)));
     }
   }
+
   if (valor == null) throw Object.assign(new Error('UF no disponible para ' + fecha), { code: 'UF_UNAVAILABLE' });
 
-  db.prepare('INSERT OR REPLACE INTO uf_cache (fecha, valor) VALUES (?, ?)').run(fecha, valor);
+  db.prepare("INSERT OR REPLACE INTO uf_cache (fecha, valor, source) VALUES (?, ?, 'mindicador.cl')").run(fecha, valor);
   const saved = db.prepare('SELECT obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
   return { fecha, valor, updated_at: saved && saved.obtenido_at, cached: false, source: 'mindicador.cl' };
 }
@@ -62,11 +105,6 @@ function ultimoDiaDisponible(anio, mes) {
   return finMes;
 }
 
-function isCurrentMonth(anio, mes) {
-  const hoy = todayParts();
-  return anio === hoy.anio && mes === hoy.mes;
-}
-
 function resumenValores(valores) {
   if (!valores.length) {
     return {
@@ -98,9 +136,69 @@ function isBetween(fecha, inicio, fin) {
   return fecha >= inicio && fecha <= fin;
 }
 
-async function fetchUFYear(anio) {
+function parseValorSII(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const normalized = raw.replace(/\./g, '').replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function stripHtml(value) {
+  return String(value || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+function monthFromSIIBlock(block) {
+  const title = block.match(/<h2>([^<]+)<\/h2>/i);
+  const monthName = stripHtml(title && title[1]).toLowerCase();
+  return MESES_SII[monthName] || null;
+}
+
+function parseSIIUFYear(html, anio) {
+  const blocks = String(html || '').split(/<div class='meses' id='mes_[^']+'>/i).slice(1);
+  const rows = [];
+
+  for (const block of blocks) {
+    const mes = monthFromSIIBlock(block);
+    if (!mes) continue;
+
+    const pairRegex = /<th[^>]*>\s*<strong>(\d{1,2})<\/strong>\s*<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi;
+    let match;
+    while ((match = pairRegex.exec(block))) {
+      const dia = Number(match[1]);
+      const valor = parseValorSII(stripHtml(match[2]));
+      if (!Number.isInteger(dia) || dia < 1 || dia > 31 || valor == null) continue;
+      rows.push({
+        fecha: `${anio}-${pad(mes)}-${pad(dia)}`,
+        valor,
+        source: 'sii.cl'
+      });
+    }
+  }
+
+  return rows;
+}
+
+async function fetchUFYearSII(anio) {
+  const { data } = await axios.get(`${SII_BASE}/uf${anio}.htm`, { responseType: 'text', timeout: 15000 });
+  const rows = parseSIIUFYear(data, anio);
+  if (!rows.length) throw new Error(`SII no publico valores UF para ${anio}`);
+  return rows;
+}
+
+async function fetchUFYearMindicador(anio) {
   const { data } = await axios.get(`${BASE}/${anio}`, { timeout: 15000 });
-  return (data && data.serie) || [];
+  return ((data && data.serie) || [])
+    .map(item => ({ fecha: normalizeApiFecha(item.fecha), valor: item.valor, source: 'mindicador.cl' }))
+    .filter(item => item.fecha && item.valor != null);
+}
+
+async function fetchUFYear(anio) {
+  try {
+    return await fetchUFYearSII(anio);
+  } catch (e) {
+    return fetchUFYearMindicador(anio);
+  }
 }
 
 function saveUFCacheRows(rows) {
@@ -108,10 +206,10 @@ function saveUFCacheRows(rows) {
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO uf_cache (fecha, valor, source)
-    VALUES (?, ?, 'mindicador.cl')
+    VALUES (?, ?, ?)
   `);
   const save = db.transaction((items) => {
-    for (const item of items) insert.run(item.fecha, item.valor);
+    for (const item of items) insert.run(item.fecha, item.valor, item.source || 'sii.cl');
   });
 
   save(rows);
@@ -133,7 +231,7 @@ async function cacheUFYear(anio, hastaFecha) {
   const finAnio = `${anio}-12-31`;
   const limite = hastaFecha && hastaFecha < finAnio ? hastaFecha : finAnio;
   const rows = serie
-    .map(item => ({ fecha: normalizeApiFecha(item.fecha), valor: item.valor }))
+    .map(item => ({ fecha: normalizeApiFecha(item.fecha), valor: item.valor, source: item.source || 'sii.cl' }))
     .filter(item => item.fecha && item.valor != null && isBetween(item.fecha, inicioAnio, limite));
 
   return saveUFCacheRows(rows);
@@ -158,25 +256,24 @@ async function ensureUFCacheRange(inicio, fin) {
 }
 
 async function getHistorialUF(anio, mes) {
-  const endDay = ultimoDiaDisponible(anio, mes);
   const inicio = `${anio}-${pad(mes)}-01`;
-  const fin = `${anio}-${pad(mes)}-${pad(endDay)}`;
-  if (endDay && anio >= CACHE_FROM_YEAR) {
+  const finMes = new Date(anio, mes, 0).getDate();
+  const fin = `${anio}-${pad(mes)}-${pad(finMes)}`;
+  if (anio >= CACHE_FROM_YEAR) {
     try {
-      if (isCurrentMonth(anio, mes)) {
-        await cacheUFYear(anio, fin);
-      } else {
-        await ensureUFCacheRange(inicio, fin);
-      }
+      await cacheUFYear(anio, fin);
     } catch (e) {
-      // Si falla la carga anual, se mantiene el fallback por fecha más abajo.
+      // Si falla la carga anual, se mantiene el fallback por fecha mas abajo.
     }
   }
 
-  const cachedRows = endDay ? getCachedRange(inicio, fin) : [];
+  const cachedRows = getCachedRange(inicio, fin);
   const cachedByFecha = new Map(cachedRows.map(row => [row.fecha, row]));
   const valores = [];
   const errores = [];
+  const endDay = cachedRows.length
+    ? Math.max(...cachedRows.map(row => Number(row.fecha.slice(8, 10))))
+    : ultimoDiaDisponible(anio, mes);
 
   for (let dia = 1; dia <= endDay; dia++) {
     const fecha = `${anio}-${pad(mes)}-${pad(dia)}`;
@@ -220,8 +317,7 @@ async function getHistorialUF(anio, mes) {
 }
 
 async function warmUFCacheDesde2026() {
-  const hoy = todayParts();
-  const hasta = hoy.anio === CACHE_TO_YEAR ? hoy.iso : `${CACHE_TO_YEAR}-12-31`;
+  const hasta = `${CACHE_TO_YEAR}-12-31`;
   const result = await ensureUFCacheRange(`${CACHE_FROM_YEAR}-01-01`, hasta);
 
   return { from: CACHE_FROM_YEAR, to: hasta, saved: result.saved };

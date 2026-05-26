@@ -3,17 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>FactuFlow 🐱</title>
+  <title>MAS FactuFlow</title>
+  <script>
+    document.documentElement.setAttribute('data-bs-theme', localStorage.getItem('facturapp.theme') || 'light');
+  </script>
+  <link rel="icon" type="image/png" href="assets/img/logo-mas.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
+  <section class="welcome-screen" id="welcome-screen" aria-label="Presentación MAS">
+    <video class="welcome-video" id="welcome-video" autoplay muted playsinline preload="auto">
+      <source src="assets/video/animate-logo-2025.mp4" type="video/mp4">
+    </video>
+    <div class="welcome-actions">
+      <button class="btn btn-light welcome-skip" type="button" id="welcome-skip">
+        Entrar
+      </button>
+    </div>
+  </section>
+
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand">
-        <strong>FactuFlow 🐱</strong>
-        <small class="text-muted d-block">🐾(modo michi activado)🐾</small>
+      <div class="brand-row">
+        <a class="brand" href="#/dashboard" aria-label="Ir al dashboard">
+          <img class="brand-logo" src="assets/img/logo-mas.png" alt="MAS">
+          <strong>FactuFlow</strong>
+        </a>
+        <button class="sidebar-toggle" type="button" id="btn-sidebar-toggle" aria-label="Ocultar menú" title="Ocultar menú">
+          <i class="bi bi-chevron-left"></i>
+        </button>
       </div>
       <nav class="nav flex-column mt-3" id="main-nav">
         <a class="nav-link" href="#/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
@@ -22,8 +42,9 @@
         <a class="nav-link" href="#/historial-uf"><i class="bi bi-graph-up"></i> Historial UF</a>
         <a class="nav-link" href="#/clientes"><i class="bi bi-building"></i> Clientes</a>
         <a class="nav-link" href="#/coordinadores"><i class="bi bi-person-badge"></i> Coordinadores</a>
+        <a class="nav-link" href="#/proyecciones" id="nav-proyecciones" style="display:none"><i class="bi bi-table"></i> Proyecciones</a>
         <a class="nav-link" href="#/admin" id="nav-admin" style="display:none"><i class="bi bi-shield-lock"></i> Admin</a>
-        <a class="nav-link" href="#/configuracion"><i class="bi bi-gear"></i> Configuración</a>
+        <a class="nav-link" href="#/configuracion" id="nav-configuracion" style="display:none"><i class="bi bi-gear"></i> Configuración</a>
       </nav>
     </aside>
 
@@ -32,6 +53,9 @@
         <div id="page-title"><h2 class="mb-0">Cargando…</h2></div>
         <div class="d-flex align-items-center gap-2">
           <a class="btn btn-primary" href="#/solicitudes/nueva"><i class="bi bi-plus-lg"></i> Nueva solicitud</a>
+          <button class="btn btn-outline-secondary theme-toggle-btn" type="button" id="btn-theme-toggle" aria-label="Cambiar tema">
+            <i class="bi bi-moon"></i>
+          </button>
           <div id="auth-status"></div>
         </div>
       </header>
@@ -59,26 +83,24 @@
   <script src="assets/js/utils/validators.js"></script>
   <script src="assets/js/utils/ui.js"></script>
   <script src="assets/js/services/clientes.service.js"></script>
+  <script src="assets/js/services/theme.service.js"></script>
   <script src="assets/js/services/auth.service.js"></script>
   <script src="assets/js/services/admin.service.js"></script>
   <script src="assets/js/services/coordinadores.service.js"></script>
   <script src="assets/js/services/solicitudes.service.js"></script>
   <script src="assets/js/services/calendario.service.js"></script>
   <script src="assets/js/services/uf.service.js"></script>
-  <script src="assets/js/services/reportes.service.js"></script>
-  <script src="assets/js/services/finanzas.service.js"></script>
-  <script src="assets/js/services/tiempos.service.js"></script>
   <script src="assets/js/services/integraciones.service.js"></script>
+  <script src="assets/js/views/login.view.js"></script>
   <script src="assets/js/views/dashboard.view.js"></script>
   <script src="assets/js/views/solicitudes.view.js"></script>
   <script src="assets/js/views/calendario.view.js"></script>
   <script src="assets/js/views/historial-uf.view.js"></script>
   <script src="assets/js/views/clientes.view.js"></script>
   <script src="assets/js/views/coordinadores.view.js"></script>
+  <script src="assets/js/views/proyecciones.view.js"></script>
   <script src="assets/js/views/admin.view.js"></script>
-  <script src="assets/js/views/desarrolladores.view.js"></script>
-  <script src="assets/js/views/reportes.view.js"></script>
-  <script src="assets/js/views/finanzas.view.js"></script>
+  <script src="assets/js/views/configuracion.view.js"></script>
   <script src="assets/js/app.js"></script>
 </body>
 </html>

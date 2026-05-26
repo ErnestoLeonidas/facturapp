@@ -16,8 +16,8 @@ documento de inducción, formato de OC).
 | Front | SPA ligera de un solo `index.html` + Bootstrap 5 + jQuery + JS modular por vistas (hash routing) |
 | Backend | API JSON propia. Stack recomendado: **Node.js + Express** (homogéneo con front) |
 | Persistencia | Postgres (recomendado) o SQLite para fase 1 si no hay infraestructura. Migraciones versionadas |
-| Auth | Fase 1: clave única interna. Fase 2: roles (Admin / Coordinador / Desarrollador / Consulta) |
-| Integraciones | UF vía proxy `/api/uf` (fuente: mindicador.cl, con cache por fecha). Google Sheets/Drive con Service Account vivendo solo en backend |
+| Auth | Login por usuario y contraseña. Usuario general: 3 primeras letras del nombre + 3 primeras letras del apellido; excepciones por duplicidad configurables. Roles iniciales: admin / usuario |
+| Integraciones | UF vía proxy `/api/uf` (fuente primaria SII, fallback externo, con cache por fecha). Google Sheets/Drive con Service Account vivendo solo en backend |
 | Exportación | Generar XLSX réplica de la plantilla "Solicitud de Factura Grupo MAS" usando `exceljs` |
 | Despliegue | Cualquier hosting Node.js (Render, Railway, VPS). Front servido como estáticos por el mismo backend |
 
@@ -27,6 +27,14 @@ documento de inducción, formato de OC).
 - Toda solicitud emitida debe persistir el `uf_valor` y `uf_fecha` efectivamente usados.
 - La plantilla exportada debe ser **idéntica en estructura, campos y orden** al archivo `archivos/Solicitud factura Desempeño  2025 - noviembre.xls`.
 - Cada exportación queda asociada a una `version_plantilla` para que cambios futuros no alteren documentos antiguos.
+- Los usuarios se autentican con `usuario` + `contraseña`; no se usa correo como identificador principal de login.
+
+**Perfiles admin iniciales:**
+
+| Usuario | Rol |
+|---|---|
+| `valgian` | admin |
+| `cgaete` | admin |
 
 ---
 
@@ -96,15 +104,13 @@ Ya cubierto por este repo:
 - [x] Node.js + Express + `node:sqlite` (sin compilación nativa).
 - [x] Schema completo (14 tablas) con índices, FK, auto-init en arranque.
 - [x] Seeder con 19 clientes, 4 coordinadores, empresa MAS Consultores reales.
-- [x] CRUD completo de clientes, receptores, CP, productos, desarrolladores, coordinadores.
+- [x] CRUD operativo de clientes, receptores, CP y coordinadores.
 - [x] CRUD de solicitudes con cálculo automático Neto/IVA/Total.
 - [x] Máquina de estados con `historial_estado` (Borrador → ... → Cerrada).
-- [x] Endpoint `/api/uf` con cache persistente (mindicador.cl).
+- [x] Endpoint `/api/uf` con cache persistente, SII como fuente primaria y fallback externo.
 - [x] Endpoint duplicar solicitud.
 - [x] Solicitudes programadas (recurrentes) con generador de instancia por período.
-- [x] Asignación de desarrolladores y registro de tiempos.
 - [x] Exportación XLSX réplica exacta de la plantilla (exceljs).
-- [x] Reportes por cliente (serie temporal, mix recurrente/adicional) y gastos globales.
 - [x] Frontend servido como estáticos desde el mismo proceso.
 
 **Frontend:**
@@ -112,10 +118,9 @@ Ya cubierto por este repo:
 - [x] Dashboard con KPIs reales y solicitudes recientes.
 - [x] Solicitudes: lista filtrable, formulario completo (ítems, CPs, receptores, UF/IVA), flujo de estados, duplicar, exportar.
 - [x] Clientes: lista filtrable, ficha completa con receptores/CPs, historial de solicitudes.
-- [x] Desarrolladores: lista, ficha con registro de tiempos.
 - [x] Mensuales (recurrentes): lista de plantillas, generar período.
-- [x] Reportes: gastos por período, ranking por cliente, serie temporal.
 - [x] Configuración: test UF, estado Sheets.
+- [x] QA general: recorte de pantallas/rutas legado no vigentes (Excel como BD, desarrolladores, tiempos, reportes/finanzas antiguas).
 
 **Cómo arrancar:**
 ```bash
@@ -165,7 +170,7 @@ npm start          # http://localhost:3000
 
 ### Fase 3 — Hardening y producción (1 a 2 semanas)
 
-- [ ] Auth con roles.
+- [x] Auth con roles admin / usuario y protección backend de rutas API.
 - [ ] Logging estructurado y `requestId`.
 - [ ] Backups y monitoreo de cuotas Google.
 - [ ] Documentación operativa (`docs/operacion.md`).
@@ -180,7 +185,7 @@ Una entrega se considera apta para producción cuando:
 
 1. Se puede crear una solicitud para cualquiera de los 19 clientes existentes y exportar un XLSX visualmente indistinguible del archivo Soprole de noviembre 2025.
 2. Se pueden generar las solicitudes mensuales recurrentes para el período en curso con un solo clic por plantilla, o automáticamente según `dia_emision`.
-3. El valor UF persistido en la solicitud emitida coincide con el valor de mindicador.cl para la `uf_fecha` registrada.
+3. El valor UF persistido en la solicitud emitida coincide con el valor oficial SII para la `uf_fecha` registrada.
 4. El historial muestra todos los cambios de estado con autor, timestamp y comentario.
 5. Cualquier exportación realizada antes de un cambio de plantilla mantiene su formato original al re-descargar (versionado funciona).
 6. Los reportes por cliente cuadran con la suma de solicitudes facturadas en el rango.

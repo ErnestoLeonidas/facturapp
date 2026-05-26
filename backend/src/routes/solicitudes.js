@@ -690,38 +690,4 @@ r.get('/:id/historial', (req, res) => {
   ok(res, db.prepare('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC').all(req.params.id));
 });
 
-r.post('/:id/asignaciones', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
-  if (!row) return notFound(res);
-  const { desarrollador_id, rol, horas_estimadas } = req.body;
-  if (!desarrollador_id) return fail(res, 'VALIDATION_ERROR', 'desarrollador_id requerido');
-  const id = uuidv4();
-  db.prepare('INSERT INTO asignacion_solicitud (id, solicitud_id, desarrollador_id, rol, horas_estimadas) VALUES (?,?,?,?,?)').run(id, req.params.id, desarrollador_id, rol||null, horas_estimadas||null);
-  ok(res, db.prepare('SELECT a.*, d.nombre as dev_nombre FROM asignacion_solicitud a JOIN desarrollador d ON d.id=a.desarrollador_id WHERE a.id=?').get(id), 201);
-});
-
-r.delete('/:id/asignaciones/:asigId', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
-  if (!row) return notFound(res);
-  db.prepare('UPDATE asignacion_solicitud SET activo=0 WHERE id=? AND solicitud_id=?').run(req.params.asigId, req.params.id);
-  ok(res, { id: req.params.asigId });
-});
-
-r.get('/:id/tiempos', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
-  if (!row) return notFound(res);
-  ok(res, db.prepare(`SELECT rt.*, d.nombre as dev_nombre FROM registro_tiempo rt JOIN desarrollador d ON d.id=rt.desarrollador_id WHERE rt.solicitud_id=? ORDER BY rt.fecha DESC`).all(req.params.id));
-});
-
-r.post('/:id/tiempos', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id);
-  if (!row) return notFound(res);
-  const { desarrollador_id, fecha, minutos, descripcion } = req.body;
-  if (!desarrollador_id || !minutos || !fecha) return fail(res, 'VALIDATION_ERROR', 'desarrollador_id, fecha y minutos son requeridos');
-  if (minutos <= 0) return fail(res, 'VALIDATION_ERROR', 'minutos debe ser > 0');
-  const id = uuidv4();
-  db.prepare('INSERT INTO registro_tiempo (id, solicitud_id, desarrollador_id, fecha, minutos, descripcion) VALUES (?,?,?,?,?,?)').run(id, req.params.id, desarrollador_id, fecha, minutos, descripcion||null);
-  ok(res, db.prepare('SELECT * FROM registro_tiempo WHERE id=?').get(id), 201);
-});
-
 module.exports = r;

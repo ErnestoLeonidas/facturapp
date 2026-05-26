@@ -4,10 +4,14 @@ const auth = require('../services/auth');
 const audit = require('../services/audit');
 
 r.post('/login', (req, res) => {
-  const { email, password } = req.body || {};
-  const session = auth.authenticate(email, password);
-  if (!session) return fail(res, 'AUTH_INVALID', 'Email o password incorrecto', null, 401);
-  audit.log({ user: session.user, body: req.body }, 'login', 'auth', session.user.id, { email: session.user.email });
+  const { username, email, password } = req.body || {};
+  const identifier = username || email;
+  const session = auth.authenticate(identifier, password);
+  if (!session) return fail(res, 'AUTH_INVALID', 'Usuario o password incorrecto', null, 401);
+  audit.log({ user: session.user, body: req.body }, 'login', 'auth', session.user.id, {
+    username: session.user.username,
+    email: session.user.email
+  });
   ok(res, session);
 });
 

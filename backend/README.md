@@ -9,7 +9,7 @@ API JSON para la gestion de solicitudes de facturacion de Grupo MAS.
 - SQLite con `node:sqlite`
 - `exceljs` para exportacion XLSX
 - `googleapis` para integraciones Sheets/Drive
-- `axios` para UF via mindicador.cl
+- `axios` para UF via SII con fallback externo
 
 ## Comandos Operativos
 
@@ -31,8 +31,6 @@ Scripts disponibles:
 - `npm run db:check`: ejecuta consultas de humo de integridad.
 - `npm run db:backup`: copia la base a `backend/backups/` con timestamp.
 - `npm run db:restore -- <backup.sqlite> --yes`: restaura una copia local/controlada.
-- `npm run import:base-facturacion`: importa la base de facturacion.
-- `npm run import:master-facturacion`: importa el master de facturacion.
 - `npm run import:proyecciones-uf -- <archivo.xlsx> --anio=2026`: importa proyecciones con montos UF.
 
 ## Variables Requeridas
@@ -44,6 +42,7 @@ Ver `.env.example` para valores de referencia.
 - `SESSION_SECRET`: secreto interno para sesiones/autenticacion cuando aplique.
 - `DB_PATH`: ruta de la base SQLite.
 - `UF_API_BASE`: endpoint base de UF.
+- `UF_SII_BASE`: URL base de la tabla UF oficial del SII.
 - `UF_CACHE_TTL_HOURS`: vigencia del cache UF.
 - `GOOGLE_SA_JSON_PATH`: ruta local del JSON de Service Account. No commitear este archivo.
 - `GOOGLE_SHEETS_BASE_FACTURACION_ID`: planilla fuente de base de facturacion.
@@ -53,8 +52,6 @@ Ver `.env.example` para valores de referencia.
 - `GOOGLE_SHEETS_PROYECCIONES_ID`: planilla de proyecciones.
 - `GOOGLE_SHEETS_PROYECCIONES_RANGE`: rango de lectura de proyecciones.
 - `GOOGLE_DRIVE_PLANTILLA_FILE_ID`: archivo plantilla en Drive.
-- `BASE_FACTURACION_XLSX_PATH`: fallback local para importar desde XLSX.
-- `BASE_FACTURACION_XLSX_SHEET`: hoja del XLSX local, si aplica.
 - `SLACK_BOT_TOKEN`: token Slack para futuras automatizaciones.
 - `AUTH_MODE` y `ADMIN_EMAILS`: configuracion de autenticacion futura.
 

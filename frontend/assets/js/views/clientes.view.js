@@ -3,16 +3,12 @@ window.ClientesView = {
     UI.setTitle('Clientes');
     $('#view-root').html(`
       <div class="card mb-3"><div class="card-body py-2">
-        <div class="row g-2">
-          <div class="col-md-4"><input class="form-control form-control-sm" id="cli-q" placeholder="Buscar cliente…"></div>
-          <div class="col-md-3">
-            <select class="form-select form-select-sm" id="cli-estado">
-              <option value="">Estado</option><option>Activo</option><option>Inactivo</option>
-            </select>
+        <div class="row g-2 align-items-center">
+          <div class="col">
+            <input class="form-control form-control-sm" id="cli-q" placeholder="Buscar por cliente, RUT o coordinador" autocomplete="off">
           </div>
-          <div class="col-md-5 d-flex gap-1">
-            <button class="btn btn-sm btn-outline-primary flex-grow-1" id="cli-filtrar">Filtrar</button>
-            <button class="btn btn-sm btn-primary" id="cli-nuevo">+</button>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-primary" id="cli-nuevo" type="button">+</button>
           </div>
         </div>
       </div></div>
@@ -45,8 +41,10 @@ window.ClientesView = {
       </div>
     `);
 
+    let searchTimer = null;
     const cargar = () => {
-      const params = { q: $('#cli-q').val(), estado: $('#cli-estado').val() };
+      const q = String($('#cli-q').val() || '').trim();
+      const params = q ? { q } : {};
       ClientesService.list(params).then(data => {
         if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="6" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-clientes').html(data.map(c => `
@@ -62,8 +60,10 @@ window.ClientesView = {
     };
 
     cargar();
-    $('#cli-filtrar').on('click', cargar);
-    $('#cli-q').on('keypress', e => e.which === 13 && cargar());
+    $('#cli-q').on('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(cargar, 180);
+    });
 
     $('#cli-nuevo').on('click', () => {
       $('#modalCliTitulo').text('Nuevo cliente');
@@ -169,7 +169,7 @@ window.ClientesView = {
           </div>
           <div class="card"><div class="table-responsive">
             <table class="table mb-0 align-middle">
-              <thead><tr><th>Folio</th><th>Período</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
+              <thead><tr><th>Período</th><th class="text-end">Total</th><th>Estado</th></tr></thead>
               <tbody id="tbl-cli-solic"></tbody>
             </table>
           </div></div>
@@ -179,10 +179,10 @@ window.ClientesView = {
       SolicitudesService.list({ clienteId: params.id }).then(sols => {
         $('#tbl-cli-solic').html(sols.slice(0,10).map(s => `
           <tr style="cursor:pointer" onclick="location.hash='#/solicitudes/${s.id}'">
-            <td><code>${s.folio}</code></td><td>${s.periodo}</td>
+            <td>${s.periodo}</td>
             <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
             <td>${UI.estadoChip(s.estado)}</td>
-          </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">Sin solicitudes</td></tr>');
+          </tr>`).join('') || '<tr><td colspan="3" class="text-muted text-center py-3">Sin solicitudes</td></tr>');
       });
 
       $('#btn-editar-cli').on('click', () => {
@@ -403,3 +403,4 @@ window.ClientesView = {
   },
   _editingId: null
 };
+

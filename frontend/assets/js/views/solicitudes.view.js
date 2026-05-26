@@ -135,7 +135,7 @@ window.SolicitudesView = {
   _renderFormView(sol, prefill) {
     const isNew = !sol;
     const readonly = sol && !['PENDIENTE OC / HES','FACTURA SOLICITADA','Borrador','PendienteDatos'].includes(SolicitudesView._estadoSolicitudVisible(sol.estado));
-    UI.setTitle(isNew ? 'Nueva solicitud' : sol.folio);
+    UI.setTitle(isNew ? 'Nueva solicitud' : 'Solicitudes');
 
     const empresaOpts = AppConfig.empresasEmisoras.map(e =>
       `<option value="${e.codigo}" ${(prefill.empresa_emisora||'MAS_CONSULTORES')===e.codigo?'selected':''}>${e.nombre}</option>`).join('');
@@ -149,8 +149,8 @@ window.SolicitudesView = {
       <div class="row g-3">
         <div class="col-lg-8">
           <div class="card">
-            <div class="card-header"><strong>Solicitud de Factura — Grupo MAS</strong>
-              ${sol ? ` &nbsp; <code>${sol.folio}</code> &nbsp; ${UI.estadoChip(sol.estado)}` : ''}
+            <div class="card-header"><strong>Solicitud de Factura</strong>
+              ${sol ? ` &nbsp; ${UI.estadoChip(sol.estado)}` : ''}
             </div>
             <div class="card-body">
               <div class="row g-3">

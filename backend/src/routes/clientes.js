@@ -2,7 +2,6 @@ const r = require('express').Router();
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
-const { pushMasterAsync } = require('../services/masterAutoSync');
 const { upperName } = require('../db-normalize-names');
 
 function hydrate(row) {
@@ -41,7 +40,11 @@ r.get('/', (req, res) => {
   const { q, estado, frecuencia } = req.query;
   let sql = 'SELECT c.*, co.nombre as coordinador_nombre FROM cliente c LEFT JOIN coordinador co ON co.id = c.coordinador_id WHERE 1=1';
   const vals = [];
-  if (q)          { sql += ' AND (c.nombre_corto LIKE ? OR c.razon_social LIKE ?)'; vals.push(`%${q}%`, `%${q}%`); }
+  if (q) {
+    const like = `%${String(q).trim()}%`;
+    sql += ' AND (c.nombre_corto LIKE ? OR c.razon_social LIKE ? OR c.rut LIKE ? OR co.nombre LIKE ?)';
+    vals.push(like, like, like, like);
+  }
   if (estado)     { sql += ' AND c.estado = ?'; vals.push(estado); }
   if (frecuencia) { sql += ' AND c.frecuencia = ?'; vals.push(frecuencia); }
   sql += ' ORDER BY c.nombre_corto';
@@ -57,7 +60,6 @@ r.post('/', (req, res) => {
     frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, upperName(nombre_corto), upperName(razon_social)||null, rut||null, giro||null, direccion||null, coordinador_id||null,
       frecuencia||'Mensual', dia_facturacion||null, mes_inicio||null, requiere_hes ? 1 : 0, estado||'Activo', notas||null);
-  pushMasterAsync('cliente creado');
   ok(res, hydrate(db.prepare('SELECT * FROM cliente WHERE id = ?').get(id)), 201);
 });
 
@@ -85,7 +87,6 @@ r.patch('/:id', (req, res) => {
     sets.push("updated_at=datetime('now')");
     vals.push(req.params.id);
     db.prepare(`UPDATE cliente SET ${sets.join(',')} WHERE id=?`).run(...vals);
-    pushMasterAsync('cliente actualizado');
   }
   ok(res, hydrate(db.prepare('SELECT * FROM cliente WHERE id = ?').get(req.params.id)));
 });
@@ -94,7 +95,6 @@ r.delete('/:id', (req, res) => {
   const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
   if (!row) return notFound(res);
   db.prepare("UPDATE cliente SET estado='Inactivo', updated_at=datetime('now') WHERE id=?").run(req.params.id);
-  pushMasterAsync('cliente desactivado');
   ok(res, { id: req.params.id, estado: 'Inactivo' });
 });
 

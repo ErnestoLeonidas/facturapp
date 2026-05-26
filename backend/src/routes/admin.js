@@ -1,23 +1,19 @@
-const path = require('path');
+const crypto = require('crypto');
 const ExcelJS = require('exceljs');
 const db = require('../db');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail } = require('../middleware/envelope');
 const { requireRole } = require('../services/auth');
 const audit = require('../services/audit');
-const { generarFolio } = require('../utils/folio');
 
 const r = require('express').Router();
-const EMPRESA = 'MAS_CONSULTORES';
+const PASSWORD_ITERATIONS = 120000;
 
 r.use(requireRole('admin'));
+r.use('/proyecciones', require('./admin-proyecciones'));
 
 function clean(value) {
   if (value === undefined || value === null) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
-  if (value.text) return clean(value.text);
-  if (value.result !== undefined) return clean(value.result);
-  if (value.richText) return clean(value.richText.map(part => part.text).join(''));
   return String(value).trim();
 }
 
@@ -30,217 +26,186 @@ function key(value) {
     .replace(/^_|_$/g, '');
 }
 
-function parseNumber(value) {
-  const s = clean(value);
-  if (!s) return null;
-  const normalized = s.replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.');
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : null;
+function normalizeUsername(value) {
+  return key(value).replace(/_/g, '').slice(0, 40);
 }
 
-const MESES = [
-  'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
-  'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
-];
-
-function mesNumero(value) {
-  const n = Number(value);
-  if (Number.isInteger(n) && n >= 1 && n <= 12) return n;
-  const dateMatch = clean(value).match(/^\d{4}-(\d{1,2})-\d{1,2}/);
-  if (dateMatch) return Number(dateMatch[1]);
-  const normalized = key(value).toUpperCase();
-  const idx = MESES.findIndex(m => key(m).toUpperCase() === normalized);
-  return idx >= 0 ? idx + 1 : null;
+function hashPassword(password, salt) {
+  return crypto.pbkdf2Sync(String(password || ''), salt, PASSWORD_ITERATIONS, 32, 'sha256').toString('hex');
 }
 
-function periodo(row, anioDefault) {
-  const fecha = clean(row.fecha_estimada_facturacion || row.fecha_solicitud);
-  const dateMatch = fecha.match(/^(\d{4})-(\d{1,2})-\d{1,2}/);
-  const anio = Number(clean(row.anio)) || (dateMatch && Number(dateMatch[1])) || Number(anioDefault) || new Date().getFullYear();
-  const mes = mesNumero(row.mes || row.fecha_estimada_facturacion || row.fecha_solicitud);
-  if (!anio || !mes) return null;
-  return `${anio}-${String(mes).padStart(2, '0')}`;
+function periodoActual(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Santiago',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(date);
+  const year = parts.find(p => p.type === 'year').value;
+  const month = parts.find(p => p.type === 'month').value;
+  return `${year}-${month}`;
 }
 
-function rowsFromWorksheet(ws) {
-  const headerRow = ws.getRow(1);
-  const headers = [];
-  for (let c = 1; c <= ws.columnCount; c += 1) headers.push(key(headerRow.getCell(c).value));
-
-  return Array.from({ length: ws.rowCount - 1 }, (_, i) => i + 2)
-    .map(rowNumber => {
-      const row = ws.getRow(rowNumber);
-      const out = { fila: rowNumber };
-      headers.forEach((header, idx) => {
-        if (header) out[header] = clean(row.getCell(idx + 1).value);
-      });
-      return out;
-    })
-    .filter(row => Object.entries(row).some(([name, value]) => name !== 'fila' && value));
+function nombreMes(periodo) {
+  const [year, month] = String(periodo || '').split('-').map(Number);
+  if (!year || !month) return periodo || '';
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    month: 'long',
+    year: 'numeric'
+  }).format(new Date(Date.UTC(year, month - 1, 15, 12)));
 }
 
-function clienteId(row) {
-  const id = clean(row.cliente_id);
-  if (id && db.prepare('SELECT id FROM cliente WHERE id = ? AND estado = ?').get(id, 'Activo')) return id;
-
-  const nombre = clean(row.cliente || row.nombre_cliente || row.cliente_nombre);
-  if (!nombre) return null;
-  const found = db.prepare(`
-    SELECT id FROM cliente
-    WHERE estado = 'Activo'
-      AND upper(nombre_corto) = upper(?)
-    LIMIT 1
-  `).get(nombre);
-  return found && found.id;
-}
-
-function cpDeCliente(row, cliId) {
-  const ref = clean(row.cp_id || row.codigo || row.codigo_cp);
-  if (!ref || !cliId) return null;
+function pendientesOCMes(periodo) {
   return db.prepare(`
-    SELECT id, codigo, nombre
-    FROM cp
-    WHERE cliente_id = ?
-      AND activo = 1
-      AND (id = ? OR codigo = ?)
-    LIMIT 1
-  `).get(cliId, ref, ref);
+    SELECT
+      c.nombre_corto AS cliente,
+      cp.codigo AS cp,
+      cp.tipo_cp AS tipo_cp,
+      sf.periodo,
+      sc.monto_uf AS cantidad_uf
+    FROM solicitud_factura sf
+    JOIN cliente c ON c.id = sf.cliente_id
+    JOIN solicitud_cp sc ON sc.solicitud_id = sf.id
+    JOIN cp ON cp.id = sc.cp_id
+    WHERE sf.is_delete = 0
+      AND sf.estado = 'PENDIENTE OC / HES'
+      AND sf.periodo = ?
+    ORDER BY c.nombre_corto, cp.codigo, sf.folio
+  `).all(periodo);
 }
 
-function coordinadorSugerido(clienteId, cpNombre) {
-  if (cpNombre) {
-    const exacto = db.prepare(`
-      SELECT co.id
-      FROM cliente_coordinador cc
-      JOIN coordinador co ON co.id = cc.coordinador_id
-      WHERE cc.cliente_id = ?
-        AND cc.cp_nombre = ?
-        AND cc.activo = 1
-        AND co.activo = 1
-      LIMIT 1
-    `).get(clienteId, cpNombre);
-    if (exacto) return exacto.id;
-  }
-  const general = db.prepare(`
-    SELECT co.id
-    FROM cliente_coordinador cc
-    JOIN coordinador co ON co.id = cc.coordinador_id
-    WHERE cc.cliente_id = ?
-      AND (cc.cp_nombre IS NULL OR cc.cp_nombre = '')
-      AND cc.activo = 1
-      AND co.activo = 1
-    LIMIT 1
-  `).get(clienteId);
-  return general && general.id;
+async function exportPendientesOCMes(periodo) {
+  const rows = pendientesOCMes(periodo);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'FactuFlow';
+  workbook.created = new Date();
+  const ws = workbook.addWorksheet('Pendientes OC');
+
+  ws.columns = [
+    { header: 'Cliente', key: 'cliente', width: 28 },
+    { header: 'CP', key: 'cp', width: 14 },
+    { header: 'Tipo de CP', key: 'tipo_cp', width: 30 },
+    { header: 'Mes', key: 'mes', width: 18 },
+    { header: 'Cantidad de UF', key: 'cantidad_uf', width: 16 }
+  ];
+
+  ws.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF17963A' } };
+  ws.getRow(1).alignment = { vertical: 'middle' };
+
+  const mes = nombreMes(periodo);
+  rows.forEach(row => {
+    const cantidadUF = Number(row.cantidad_uf);
+    ws.addRow({
+      cliente: row.cliente || '',
+      cp: row.cp || '',
+      tipo_cp: row.tipo_cp || '',
+      mes,
+      cantidad_uf: Number.isFinite(cantidadUF) && cantidadUF > 0 ? cantidadUF : null
+    });
+  });
+
+  ws.getColumn('cantidad_uf').numFmt = '#,##0.00';
+  ws.eachRow(row => {
+    row.eachCell(cell => {
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E6EA' } },
+        left: { style: 'thin', color: { argb: 'FFE2E6EA' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E6EA' } },
+        right: { style: 'thin', color: { argb: 'FFE2E6EA' } }
+      };
+    });
+  });
+
+  ws.autoFilter = 'A1:E1';
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  return workbook.xlsx.writeBuffer();
 }
 
-function receptoresCliente(clienteId) {
-  return db.prepare('SELECT id FROM receptor WHERE cliente_id = ? AND activo = 1').all(clienteId);
+function passwordFields(username, password) {
+  const salt = `facturapp-${normalizeUsername(username)}-${crypto.randomBytes(8).toString('hex')}`;
+  return { salt, hash: hashPassword(password, salt) };
 }
 
 r.get('/usuarios', (req, res) => {
-  ok(res, db.prepare('SELECT id, nombre, email, rol, activo, created_at FROM app_user ORDER BY rol, email').all());
+  ok(res, db.prepare('SELECT id, nombre, username, email, rol, activo, created_at FROM app_user ORDER BY rol, username, email').all());
+});
+
+r.post('/usuarios', (req, res) => {
+  const nombre = clean(req.body && req.body.nombre);
+  const username = normalizeUsername(req.body && req.body.username);
+  const rol = clean(req.body && req.body.rol) || 'usuario';
+  const password = clean(req.body && req.body.password);
+  if (!nombre || !username || !password) return fail(res, 'VALIDATION_ERROR', 'Nombre, usuario y password son requeridos');
+  if (!['admin', 'usuario'].includes(rol)) return fail(res, 'VALIDATION_ERROR', 'Rol no valido');
+  if (password.length < 6) return fail(res, 'VALIDATION_ERROR', 'El password debe tener al menos 6 caracteres');
+
+  const passwordData = passwordFields(username, password);
+  const existing = db.prepare(`
+    SELECT id FROM app_user
+    WHERE lower(COALESCE(username, email)) = lower(?) OR lower(email) = lower(?)
+    LIMIT 1
+  `).get(username, username);
+
+  if (existing) {
+    db.prepare(`
+      UPDATE app_user
+      SET nombre = ?, username = ?, email = ?, rol = ?, password_hash = ?, password_salt = ?, activo = 1, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(nombre, username, username, rol, passwordData.hash, passwordData.salt, existing.id);
+  } else {
+    db.prepare(`
+      INSERT INTO app_user (id, nombre, username, email, rol, password_hash, password_salt, activo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).run(uuidv4(), nombre, username, username, rol, passwordData.hash, passwordData.salt);
+  }
+
+  const user = db.prepare('SELECT id, nombre, username, email, rol, activo, created_at FROM app_user WHERE lower(username) = lower(?) LIMIT 1').get(username);
+  audit.log(req, 'crear_usuario', 'app_user', user.id, { username, rol });
+  ok(res, user, 201);
+});
+
+r.put('/usuarios/:id/password', (req, res) => {
+  const user = db.prepare('SELECT id, username, email FROM app_user WHERE id = ?').get(req.params.id);
+  if (!user) return fail(res, 'NOT_FOUND', 'Usuario no encontrado', null, 404);
+  const password = clean(req.body && req.body.password);
+  if (password.length < 6) return fail(res, 'VALIDATION_ERROR', 'El password debe tener al menos 6 caracteres');
+  const passwordData = passwordFields(user.username || user.email, password);
+  db.prepare(`
+    UPDATE app_user
+    SET password_hash = ?, password_salt = ?, updated_at = datetime('now')
+    WHERE id = ?
+  `).run(passwordData.hash, passwordData.salt, user.id);
+  db.prepare("UPDATE app_session SET revoked_at = datetime('now') WHERE user_id = ?").run(user.id);
+  audit.log(req, 'cambiar_password_usuario', 'app_user', user.id, { username: user.username || user.email });
+  ok(res, { changed: true });
+});
+
+r.delete('/usuarios/:id', (req, res) => {
+  const user = db.prepare('SELECT id, username, email FROM app_user WHERE id = ?').get(req.params.id);
+  if (!user) return fail(res, 'NOT_FOUND', 'Usuario no encontrado', null, 404);
+  if (req.user && req.user.id === user.id) return fail(res, 'VALIDATION_ERROR', 'No puedes eliminar tu propio usuario activo');
+  db.prepare("UPDATE app_user SET activo = 0, updated_at = datetime('now') WHERE id = ?").run(user.id);
+  db.prepare("UPDATE app_session SET revoked_at = datetime('now') WHERE user_id = ?").run(user.id);
+  audit.log(req, 'eliminar_usuario', 'app_user', user.id, { username: user.username || user.email });
+  ok(res, { deleted: true });
 });
 
 r.get('/audit', (req, res) => {
   ok(res, audit.latest(Number(req.query.limit) || 80));
 });
 
-r.post('/carga-anual', async (req, res) => {
-  const filePath = req.body && req.body.path;
-  const anio = Number(req.body && req.body.anio) || new Date().getFullYear();
-  if (!filePath) return fail(res, 'VALIDATION_ERROR', 'Debes indicar path del Excel en el servidor');
-
-  const resolved = path.resolve(filePath);
-  const wb = new ExcelJS.Workbook();
+r.get('/reportes/pendientes-oc-mes/export', async (req, res, next) => {
   try {
-    await wb.xlsx.readFile(resolved);
+    const periodo = periodoActual();
+    const buffer = await exportPendientesOCMes(periodo);
+    audit.log(req, 'exportar_pendientes_oc_mes', 'solicitud_factura', periodo, { periodo });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="Pendientes_OC_${periodo}.xlsx"`);
+    res.send(Buffer.from(buffer));
   } catch (e) {
-    return fail(res, 'EXCEL_READ_FAILED', 'No se pudo leer el Excel: ' + e.message);
+    next(e);
   }
-
-  const ws = wb.getWorksheet(req.body.sheet || 1);
-  if (!ws) return fail(res, 'VALIDATION_ERROR', 'No se encontro la hoja indicada');
-
-  const rows = rowsFromWorksheet(ws);
-  const batchId = uuidv4();
-  const stats = { filas_leidas: rows.length, creadas: 0, omitidas: [] };
-
-  const tx = db.transaction(() => {
-    rows.forEach(row => {
-      const tipo = key(row.tipo_impuesto || 'AFECTO_IVA').toUpperCase();
-      if (tipo && tipo !== 'AFECTO_IVA') {
-        stats.omitidas.push({ fila: row.fila, motivo: 'Solo se carga AFECTO_IVA' });
-        return;
-      }
-
-      const cliId = clienteId(row);
-      const cp = cpDeCliente(row, cliId);
-      const per = periodo(row, anio);
-      if (!cliId || !cp || !per) {
-        stats.omitidas.push({ fila: row.fila, motivo: 'Falta cliente, CP o periodo valido' });
-        return;
-      }
-
-      const exists = db.prepare(`
-        SELECT sf.id
-        FROM solicitud_factura sf
-        JOIN solicitud_cp sc ON sc.solicitud_id = sf.id
-        WHERE sf.is_delete = 0
-          AND sf.empresa_emisora = ?
-          AND sf.cliente_id = ?
-          AND sf.periodo = ?
-          AND sc.cp_id = ?
-        LIMIT 1
-      `).get(EMPRESA, cliId, per, cp.id);
-      if (exists) {
-        stats.omitidas.push({ fila: row.fila, motivo: 'Ya existe solicitud activa para cliente/periodo/CP' });
-        return;
-      }
-
-      const montoUf = parseNumber(row.monto_uf);
-      const id = uuidv4();
-      const folio = generarFolio();
-      const glosa = clean(row.glosa || row.nombre || row.producto || cp.nombre || 'Solicitud anual');
-      const coordId = coordinadorSugerido(cliId, cp.nombre);
-      const fechaSolicitud = clean(row.fecha_solicitud || row.fecha_estimada_facturacion) || `${per}-01`;
-      const observaciones = [
-        clean(row.observaciones),
-        `Carga anual admin ${anio}`,
-        `CP ${cp.codigo}`
-      ].filter(Boolean).join('\n');
-
-      db.prepare(`
-        INSERT INTO solicitud_factura (
-          id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
-          glosa, moneda_base, monto_neto_clp, monto_iva_clp, monto_total_clp, observaciones,
-          estado, admin_batch_id, origen_admin
-        )
-        VALUES (?, ?, 'mensual', ?, ?, ?, ?, ?, ?, 'UF', 0, 0, 0, ?, 'PENDIENTE OC / HES', ?, ?)
-      `).run(id, folio, cliId, coordId || null, EMPRESA, per, fechaSolicitud, glosa, observaciones, batchId, resolved);
-
-      db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?, ?, ?, ?, 0, 0)')
-        .run(uuidv4(), id, cp.id, montoUf);
-
-      receptoresCliente(cliId).forEach(rec => {
-        db.prepare('INSERT OR IGNORE INTO solicitud_receptor (solicitud_id, receptor_id) VALUES (?, ?)')
-          .run(id, rec.id);
-      });
-
-      db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(uuidv4(), id, null, 'PENDIENTE OC / HES', req.user.email, `Creada por carga anual admin ${batchId}`);
-
-      stats.creadas += 1;
-    });
-  });
-  tx();
-
-  audit.log(req, 'carga_anual_excel', 'solicitud_factura', batchId, {
-    path: resolved,
-    anio,
-    ...stats
-  });
-  ok(res, { batch_id: batchId, anio, source: resolved, stats }, 201);
 });
 
 module.exports = r;
