@@ -131,7 +131,14 @@ window.ProyeccionesView = {
       </div>
       <div id="grid-pending"></div>
       <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center"><strong>Grilla de Proyecciones</strong><span class="small text-muted" id="grid-total"></span></div>
+        <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+          <strong>Grilla de Proyecciones</strong>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-secondary" id="btn-grid-hide-columns"><i class="bi bi-eye-slash"></i> Ocultar</button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-grid-reset-columns"><i class="bi bi-arrow-counterclockwise"></i> Revertir grilla</button>
+            <span class="small text-muted" id="grid-total"></span>
+          </div>
+        </div>
         <div class="proy-grid-scroll-top" id="grid-scroll-top"><div></div></div>
         <div class="table-responsive proy-grid-wrap">
           <table class="table table-sm table-hover align-middle mb-0 proy-grid-table">
@@ -148,6 +155,8 @@ window.ProyeccionesView = {
     $('#btn-grid-version').on('click', () => ProyeccionesView._crearVersion());
     $('#btn-grid-import').on('click', () => ProyeccionesView._openImport());
     $('#btn-grid-export').on('click', () => UI.toast('Export preparado para una fase posterior.', 'info'));
+    $('#btn-grid-hide-columns').on('click', () => ProyeccionesView._openColumnModal());
+    $('#btn-grid-reset-columns').on('click', () => ProyeccionesView._resetGridColumns());
     ProyeccionesView._loadGrilla();
   },
 
@@ -192,16 +201,14 @@ window.ProyeccionesView = {
   },
 
   _gridColgroup(columns) {
-    return columns.map(col => `<col style="width:${col.hidden ? 14 : col.width}px">`).join('');
+    return columns.map(col => `<col style="width:${col.width}px">`).join('');
   },
 
   _gridHeaderCell(col) {
-    const title = col.hidden ? `Mostrar ${col.label}` : `Ocultar ${col.label}`;
-    return `<th class="${col.hidden ? 'proy-col-hidden' : ''}" data-col="${col.key}" title="${title}"><div class="proy-col-head"><span>${col.hidden ? '' : col.label}</span></div></th>`;
+    return `<th><div class="proy-col-head"><span>${col.label}</span></div></th>`;
   },
 
   _gridValueCell(col, item) {
-    if (col.hidden) return `<td class="proy-col-hidden" data-col="${col.key}"></td>`;
     if (col.key === 'iva') return `<td>${ProyeccionesView._iva(item.iva)}</td>`;
     if (col.key === 'proyecto') return `<td>${ProyeccionesView._esc(item.proyecto)}</td>`;
     if (col.key === 'ms') return `<td><code>${ProyeccionesView._esc(item.ms)}</code></td>`;
@@ -216,7 +223,6 @@ window.ProyeccionesView = {
   },
 
   _gridTotalCell(col, totals) {
-    if (col.hidden) return `<td class="proy-col-hidden" data-col="${col.key}"></td>`;
     if (col.key === 'iva') return '<td>Totales</td>';
     if (['proyecto', 'ms', 'cliente', 'dp', 'cp', 'producto', 'tipo_cp'].includes(col.key)) return '<td></td>';
     if (col.key === 'venta') return `<td class="text-end">${ProyeccionesView._clp(totals.venta)}</td>`;
@@ -225,10 +231,15 @@ window.ProyeccionesView = {
   },
 
   _renderGrid(items, total) {
-    const columns = ProyeccionesView._gridColumns();
+    const columns = ProyeccionesView._gridColumns().filter(col => !col.hidden);
     $('#grid-total').text(`${total} filas - ${ProyeccionesView.state.grilla?.version?.nombre || ''}`);
     $('#grid-colgroup').html(ProyeccionesView._gridColgroup(columns));
     $('#grid-head').html(`<tr>${columns.map(col => ProyeccionesView._gridHeaderCell(col)).join('')}</tr>`);
+    if (!columns.length) {
+      $('#grid-body').html('<tr><td class="text-muted text-center py-3">Sin columnas visibles</td></tr>');
+      ProyeccionesView._syncGridScrollbars();
+      return;
+    }
     const totals = items.reduce((acc, item) => {
       acc.venta += Number(item.venta || 0);
       Array.from({ length: 12 }, (_, i) => item.meses[i]).forEach((cell, index) => {
@@ -237,19 +248,73 @@ window.ProyeccionesView = {
       return acc;
     }, { venta: 0, meses: Array(12).fill(0) });
     const totalRow = items.length ? `<tr class="table-light fw-semibold proy-grid-total-row">${columns.map(col => ProyeccionesView._gridTotalCell(col, totals)).join('')}</tr>` : '';
-    $('#grid-body').html(items.map(item => `<tr>${columns.map(col => ProyeccionesView._gridValueCell(col, item)).join('')}</tr>`).join('') + totalRow || '<tr><td colspan="21" class="text-muted text-center py-3">Sin proyecciones</td></tr>');
+    $('#grid-body').html(items.map(item => `<tr>${columns.map(col => ProyeccionesView._gridValueCell(col, item)).join('')}</tr>`).join('') + totalRow || `<tr><td colspan="${Math.max(columns.length, 1)}" class="text-muted text-center py-3">Sin proyecciones</td></tr>`);
     $('.proy-month-cell').on('click', function () {
       const id = $(this).data('id');
       if (!id) return;
       ProyeccionesView._openEdit(id);
     });
-    $('#grid-head th[data-col], #grid-body td.proy-col-hidden[data-col]').on('click', function () {
-      const col = $(this).data('col');
-      if (ProyeccionesView.state.hiddenGridColumns.has(col)) ProyeccionesView.state.hiddenGridColumns.delete(col);
-      else ProyeccionesView.state.hiddenGridColumns.add(col);
+    ProyeccionesView._syncGridScrollbars();
+  },
+
+  _openColumnModal() {
+    const columns = ProyeccionesView._gridColumns();
+    $('#proy-columns-modal').remove();
+    $('body').append(`
+      <div class="modal fade" id="proy-columns-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Ocultar</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <div class="form-check mb-2 pb-2 border-bottom">
+                <input class="form-check-input" type="checkbox" id="grid-cols-select-all">
+                <label class="form-check-label fw-semibold" for="grid-cols-select-all">Seleccionar todo</label>
+              </div>
+              <div class="proy-column-list">
+                ${columns.map(col => `
+                  <div class="form-check">
+                    <input class="form-check-input grid-column-check" type="checkbox" id="grid-col-${ProyeccionesView._esc(col.key)}" value="${ProyeccionesView._esc(col.key)}" ${col.hidden ? '' : 'checked'}>
+                    <label class="form-check-label" for="grid-col-${ProyeccionesView._esc(col.key)}">${ProyeccionesView._esc(col.label)}</label>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="button" class="btn btn-primary" id="btn-grid-apply-columns">Aplicar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `);
+
+    const syncSelectAll = () => {
+      const checks = $('.grid-column-check');
+      const checked = $('.grid-column-check:checked').length;
+      $('#grid-cols-select-all').prop('checked', checked === checks.length).prop('indeterminate', checked > 0 && checked < checks.length);
+    };
+    syncSelectAll();
+    $('#grid-cols-select-all').on('change', function () {
+      $('.grid-column-check').prop('checked', $(this).is(':checked'));
+      syncSelectAll();
+    });
+    $('.grid-column-check').on('change', syncSelectAll);
+    $('#btn-grid-apply-columns').on('click', () => {
+      const visible = new Set($('.grid-column-check:checked').map((_, el) => el.value).get());
+      ProyeccionesView.state.hiddenGridColumns = new Set(columns.filter(col => !visible.has(col.key)).map(col => col.key));
+      bootstrap.Modal.getInstance($('#proy-columns-modal')[0]).hide();
       ProyeccionesView._renderGrid(ProyeccionesView.state.grilla.items || [], ProyeccionesView.state.grilla.total || 0);
     });
-    ProyeccionesView._syncGridScrollbars();
+    $('#proy-columns-modal').on('hidden.bs.modal', function () { $(this).remove(); });
+    new bootstrap.Modal($('#proy-columns-modal')[0]).show();
+  },
+
+  _resetGridColumns() {
+    ProyeccionesView.state.hiddenGridColumns.clear();
+    ProyeccionesView._renderGrid(ProyeccionesView.state.grilla?.items || [], ProyeccionesView.state.grilla?.total || 0);
   },
 
   _syncGridScrollbars() {

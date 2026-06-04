@@ -423,27 +423,9 @@ body.auth-screen .content {
   gap: .25rem;
   min-height: 1.5rem;
 }
-.proy-grid-table thead th[data-col] {
-  cursor: pointer;
-  user-select: none;
-}
-.proy-grid-table thead th[data-col]:hover {
-  filter: brightness(.98);
-}
-.proy-grid-table .proy-col-hidden {
-  width: 14px !important;
-  min-width: 14px !important;
-  max-width: 14px !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-  text-align: center;
-  background:
-    linear-gradient(90deg, transparent 0 5px, var(--border) 5px 8px, transparent 8px 100%),
-    var(--surface-soft);
-  cursor: pointer;
-}
-.proy-grid-table th.proy-col-hidden .proy-col-head {
-  justify-content: center;
+.proy-column-list {
+  display: grid;
+  gap: .35rem;
 }
 .proy-grid-total-row td {
   position: sticky;
@@ -464,11 +446,6 @@ body.auth-screen .content {
 .proy-grid-table th:nth-child(n+10),
 .proy-grid-table td:nth-child(n+10) {
   width: 118px;
-}
-.proy-grid-table .proy-col-hidden {
-  width: 14px !important;
-  min-width: 14px !important;
-  max-width: 14px !important;
 }
 .proy-month-cell {
   cursor: pointer;

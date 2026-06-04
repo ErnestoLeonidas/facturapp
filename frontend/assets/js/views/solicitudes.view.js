@@ -144,6 +144,7 @@ window.SolicitudesView = {
     const estadoOpts = (AppConfig.estadosProyecciones || AppConfig.estadosSolicitud).map(e =>
       `<option value="${e}" ${estadoActual===e?'selected':''}>${e}</option>`).join('');
     const ufFecha = prefill.uf_fecha || SolicitudesView._hoyISO();
+    const areaPlataforma = /plataforma/i.test(prefill.area || '');
 
     $('#view-root').html(`
       <div class="row g-3">
@@ -199,7 +200,10 @@ window.SolicitudesView = {
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Área</label>
-                  <input class="form-control" name="area" value="${prefill.area||''}" ${readonly?'readonly':''}>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="area_plataforma" id="area-plataforma" ${areaPlataforma?'checked':''} ${readonly?'disabled':''}>
+                    <label class="form-check-label" for="area-plataforma">Plataforma</label>
+                  </div>
                 </div>
               </div>
 
@@ -455,7 +459,11 @@ window.SolicitudesView = {
     SolicitudesView._recalcular();
   },
 
-  _removeCP(i) { SolicitudesView._state.cps.splice(i, 1); SolicitudesView._renderCPs(); SolicitudesView._checkCPBalance(); },
+  _removeCP(i) {
+    SolicitudesView._state.cps.splice(i, 1);
+    SolicitudesView._renderCPs();
+    SolicitudesView._checkCPBalance();
+  },
 
   _renderCoordinadoresSolicitud(selectedId) {
     const $sel = $('#sel-coordinador');
@@ -666,8 +674,9 @@ window.SolicitudesView = {
       preparar.then(s => {
         const id = (s && s.id) || sol.id;
         SolicitudesService.exportar(id).then(exp => {
-          window.open('/api/exportaciones/' + exp.exportId, '_blank');
-          UI.toast('XLSX descargado', 'success');
+          return SolicitudesService.descargarExportacion(exp.exportId).then(() => {
+            UI.toast('XLSX descargado', 'success');
+          });
         }).fail(e => UI.toast(e.message, 'danger'));
       }).fail(e => UI.toast(e.message || 'Error al guardar antes de exportar', 'danger'));
     });
@@ -741,7 +750,7 @@ window.SolicitudesView = {
       contrato_numero: val('contrato_numero') || null,
       hes_numero: val('hes_numero') || null,
       glosa: val('glosa'),
-      area: val('area') || null,
+      area: $('[name=area_plataforma]').is(':checked') ? 'Plataforma' : null,
       moneda_base: val('moneda_base') || 'CLP',
       uf_fecha: ufFecha,
       uf_valor: ufValor,
