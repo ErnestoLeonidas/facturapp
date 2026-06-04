@@ -15,8 +15,19 @@ r.use('/uf',                     require('./uf'));
 r.use('/exportaciones',          require('./exportaciones'));
 
 // Empresas emisoras (solo lectura)
-const db = require('../db');
+const db = require('../db-async');
 const { ok } = require('../middleware/envelope');
-r.get('/empresas', (req, res) => ok(res, db.prepare("SELECT * FROM empresa_emisora WHERE codigo = 'MAS_CONSULTORES'").all()));
+r.get('/empresas', async (req, res, next) => {
+  try {
+    ok(res, await db.all(`
+      SELECT *
+      FROM empresa_emisora
+      WHERE codigo IN ('MAS_CONSULTORES', 'INSTITUTO_ROI')
+      ORDER BY CASE codigo WHEN 'MAS_CONSULTORES' THEN 1 WHEN 'INSTITUTO_ROI' THEN 2 ELSE 9 END
+    `));
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = r;

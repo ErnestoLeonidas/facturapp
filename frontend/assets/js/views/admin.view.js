@@ -1,12 +1,12 @@
 window.AdminView = {
   render() {
     if (!AuthService.isAdmin()) {
-      UI.setTitle('Admin');
+      UI.setTitle('Gestión');
       $('#view-root').html('<div class="alert alert-warning">Debes iniciar sesión como admin para acceder.</div>');
       return;
     }
 
-    UI.setTitle('Admin');
+    UI.setTitle('Gestión');
     $('#view-root').html(`
       <div class="row g-3">
         <div class="col-lg-5">
@@ -30,7 +30,7 @@ window.AdminView = {
                   </select>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label">Password</label>
+                  <label class="form-label">Contraseña</label>
                   <input class="form-control form-control-sm" id="admin-user-password" type="password" placeholder="Min. 6 caracteres">
                 </div>
                 <div class="col-12">
@@ -53,7 +53,7 @@ window.AdminView = {
               <div class="d-flex justify-content-between align-items-center gap-3">
                 <div>
                   <div class="fw-semibold">Pendientes OC del mes actual</div>
-                  <div class="text-muted small">Cliente, CP, tipo de CP, mes y UF.</div>
+                  <div class="text-muted small">Cliente, CP, nombre de CP, tipo de CP, mes y UF.</div>
                 </div>
                 <button class="btn btn-sm btn-outline-primary" id="btn-export-pendientes-oc" type="button">
                   <i class="bi bi-file-earmark-excel"></i> Exportar
@@ -80,11 +80,42 @@ window.AdminView = {
           </div>
         </div>
       </div>
+
+      <div class="modal fade" id="admin-password-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Cambiar contraseña</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body">
+              <div class="mb-3">
+                <label class="form-label">Usuario</label>
+                <input class="form-control" id="admin-pass-user" type="text" disabled>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Nueva contraseña</label>
+                <input class="form-control" id="admin-pass-new" type="password" minlength="6" autocomplete="new-password">
+              </div>
+              <div>
+                <label class="form-label">Confirmar contraseña</label>
+                <input class="form-control" id="admin-pass-confirm" type="password" minlength="6" autocomplete="new-password">
+              </div>
+              <div id="admin-pass-result" class="mt-3"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+              <button type="button" class="btn btn-primary" id="btn-admin-save-pass"><i class="bi bi-key"></i> Actualizar</button>
+            </div>
+          </div>
+        </div>
+      </div>
     `);
 
     $('#btn-admin-create-user').on('click', () => AdminView._crearUsuario());
     $('#btn-refresh-audit').on('click', () => AdminView._loadAudit());
     $('#btn-export-pendientes-oc').on('click', () => AdminView._exportarPendientesOC());
+    $('#btn-admin-save-pass').on('click', () => AdminView._guardarPassword());
     AdminView._loadUsers();
     AdminView._loadAudit();
   },
@@ -98,13 +129,13 @@ window.AdminView = {
           <td>${AdminView._esc(u.rol)}</td>
           <td>${u.activo ? '<span class="badge text-bg-success">Activo</span>' : '<span class="badge text-bg-secondary">Inactivo</span>'}</td>
           <td class="text-end">
-            <button class="btn btn-sm btn-outline-secondary btn-admin-pass" data-id="${u.id}" data-user="${AdminView._esc(u.username || u.email)}" type="button"><i class="bi bi-key"></i></button>
+            <button class="btn btn-sm btn-outline-secondary btn-admin-pass" data-id="${u.id}" data-user="${AdminView._esc(u.username || u.email)}" type="button" title="Cambiar contraseña"><i class="bi bi-key"></i> Contraseña</button>
             <button class="btn btn-sm btn-outline-danger btn-admin-delete-user" data-id="${u.id}" data-user="${AdminView._esc(u.username || u.email)}" type="button" ${!u.activo ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
           </td>
         </tr>
       `).join(''));
       $('.btn-admin-pass').on('click', function () {
-        AdminView._cambiarPassword($(this).data('id'), $(this).data('user'));
+        AdminView._abrirPassword($(this).data('id'), $(this).data('user'));
       });
       $('.btn-admin-delete-user').on('click', function () {
         AdminView._eliminarUsuario($(this).data('id'), $(this).data('user'));
@@ -130,13 +161,38 @@ window.AdminView = {
     });
   },
 
-  _cambiarPassword(id, username) {
-    const password = prompt(`Nuevo password para ${username}:`);
-    if (!password) return;
-    AdminService.cambiarPasswordUsuario(id, password).then(() => {
-      UI.toast('Password actualizado', 'success');
+  _abrirPassword(id, username) {
+    AdminView._passwordUser = { id, username };
+    $('#admin-pass-user').val(username || '');
+    $('#admin-pass-new,#admin-pass-confirm').val('');
+    $('#admin-pass-result').empty();
+    new bootstrap.Modal('#admin-password-modal').show();
+  },
+
+  _guardarPassword() {
+    const selected = AdminView._passwordUser;
+    if (!selected || !selected.id) return;
+    const password = $('#admin-pass-new').val();
+    const confirm = $('#admin-pass-confirm').val();
+    if (!password || password.length < 6) {
+      $('#admin-pass-result').html('<div class="alert alert-warning py-2 mb-0">La contraseña debe tener al menos 6 caracteres.</div>');
+      return;
+    }
+    if (password !== confirm) {
+      $('#admin-pass-result').html('<div class="alert alert-warning py-2 mb-0">Las contraseñas no coinciden.</div>');
+      return;
+    }
+    const $button = $('#btn-admin-save-pass');
+    $button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Actualizando');
+    AdminService.cambiarPasswordUsuario(selected.id, password).then(() => {
+      bootstrap.Modal.getInstance($('#admin-password-modal')[0]).hide();
+      UI.toast('Contraseña actualizada', 'success');
       AdminView._loadAudit();
-    }).fail(e => UI.toast(e.message || 'No se pudo cambiar el password', 'danger'));
+    }).fail(e => {
+      $('#admin-pass-result').html(`<div class="alert alert-danger py-2 mb-0">${AdminView._esc(e.message || 'No se pudo cambiar la contraseña')}</div>`);
+    }).always(() => {
+      $button.prop('disabled', false).html('<i class="bi bi-key"></i> Actualizar');
+    });
   },
 
   _eliminarUsuario(id, username) {
@@ -149,7 +205,7 @@ window.AdminView = {
   },
 
   _loadAudit() {
-    AdminService.audit(80).then(rows => {
+    AdminService.audit(8).then(rows => {
       if (!rows.length) {
         $('#admin-audit').html('<tr><td colspan="5" class="text-muted text-center py-3">Sin eventos</td></tr>');
         return;

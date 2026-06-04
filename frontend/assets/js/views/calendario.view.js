@@ -7,7 +7,9 @@
   render(params = {}) {
     const hoy = new Date();
     const anio = Number(params.anio) || hoy.getFullYear();
-    const mes = params.mes || '';
+    const mes = params.mes === 'all' ? '' : (params.mes || String(hoy.getMonth() + 1));
+    const isAdmin = AuthService.isAdmin && AuthService.isAdmin();
+    const colCount = isAdmin ? 7 : 6;
 
     UI.setTitle('Calendario');
     $('#view-root').html(`
@@ -19,13 +21,13 @@
         <div>
           <label class="form-label mb-1">Mes</label>
           <select class="form-select" id="cal-mes" style="min-width: 180px">
-            <option value="">Todo el año</option>
+            <option value="all" ${!mes ? 'selected' : ''}>Todo el año</option>
             ${CalendarioView._meses.map((nombre, i) => `<option value="${i + 1}" ${String(mes) === String(i + 1) ? 'selected' : ''}>${nombre}</option>`).join('')}
           </select>
         </div>
         <div class="flex-grow-1">
           <label class="form-label mb-1">Buscar</label>
-          <input class="form-control" id="cal-q" placeholder="Cliente, codigo, nombre, tipo de CP o facturacion" value="${params.q || ''}">
+          <input class="form-control" id="cal-q" placeholder="Cliente, codigo, nombre, tipo de CP${isAdmin ? ' o coordinador' : ''}" value="${params.q || ''}">
         </div>
         <button class="btn btn-primary" id="cal-aplicar"><i class="bi bi-search"></i> Revisar</button>
       </div>
@@ -47,12 +49,12 @@
                 <th>Código</th>
                 <th>Nombre</th>
                 <th>Tipo de CP</th>
-                <th>Facturación</th>
+                ${isAdmin ? '<th>Coordinador</th>' : ''}
                 <th>Estado</th>
               </tr>
             </thead>
             <tbody id="cal-rows">
-              <tr><td colspan="7" class="text-center text-muted py-4">Cargando...</td></tr>
+              <tr><td colspan="${colCount}" class="text-center text-muted py-4">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -67,26 +69,32 @@
   },
 
   _filtros() {
+    const mes = $('#cal-mes').val();
     return {
       anio: $('#cal-anio').val(),
-      mes: $('#cal-mes').val(),
+      mes: mes === 'all' ? '' : mes,
       q: $('#cal-q').val()
     };
   },
 
   _navegar() {
-    const filtros = CalendarioView._filtros();
+    const filtros = {
+      anio: $('#cal-anio').val(),
+      mes: $('#cal-mes').val(),
+      q: $('#cal-q').val()
+    };
     const qs = $.param(Object.fromEntries(Object.entries(filtros).filter(([, value]) => value)));
     location.hash = '#/calendario' + (qs ? '?' + qs : '');
   },
 
   _cargar() {
-    $('#cal-rows').html('<tr><td colspan="7" class="text-center text-muted py-4">Cargando...</td></tr>');
+    const colCount = (AuthService.isAdmin && AuthService.isAdmin()) ? 7 : 6;
+    $('#cal-rows').html(`<tr><td colspan="${colCount}" class="text-center text-muted py-4">Cargando...</td></tr>`);
     CalendarioService.list(CalendarioView._filtros())
       .then(data => CalendarioView._renderData(data))
       .fail(e => {
         const msg = (e && e.message) || 'No se pudo cargar el calendario';
-        $('#cal-rows').html(`<tr><td colspan="7" class="text-center text-danger py-4">${msg}</td></tr>`);
+        $('#cal-rows').html(`<tr><td colspan="${colCount}" class="text-center text-danger py-4">${msg}</td></tr>`);
       });
   },
 
@@ -115,23 +123,29 @@
   },
 
   _renderRows(rows, ocultarMes) {
+    const isAdmin = AuthService.isAdmin && AuthService.isAdmin();
+    const colCount = isAdmin ? 7 : 6;
     if (!rows.length) {
-      $('#cal-rows').html('<tr><td colspan="7" class="text-center text-muted py-4">Sin CP programados para el filtro seleccionado</td></tr>');
+      $('#cal-rows').html(`<tr><td colspan="${colCount}" class="text-center text-muted py-4">Sin CP programados para el filtro seleccionado</td></tr>`);
       return;
     }
 
     $('#cal-rows').html(rows.map(row => `
-      <tr>
+      <tr class="${row.solicitud_id ? 'cal-row-clickable' : ''}" data-solicitud-id="${row.solicitud_id || ''}" ${row.solicitud_id ? 'style="cursor:pointer"' : ''}>
         <td data-cell-mes>${row.mes_nombre || ''}</td>
         <td><strong>${row.cliente || ''}</strong></td>
         <td><code>${row.codigo || ''}</code></td>
         <td>${row.nombre || ''}</td>
         <td>${row.tipo_cp || ''}</td>
-        <td>${row.codigo_facturacion || ''}</td>
+        ${isAdmin ? `<td>${row.coordinador_nombre || '<span class="text-muted">Sin coordinador</span>'}</td>` : ''}
         <td>${row.estado ? UI.estadoChip(row.estado) : '<span class="text-muted">Sin estado</span>'}</td>
       </tr>
     `).join(''));
     $('[data-cell-mes]').toggle(!ocultarMes);
+    $('#cal-rows [data-solicitud-id]').on('click', function () {
+      const id = $(this).data('solicitud-id');
+      if (id) location.hash = '#/solicitudes/' + id;
+    });
   }
 };
 

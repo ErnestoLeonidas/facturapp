@@ -12,7 +12,11 @@
     "db:clean-clientes": "node src/db-clean-clients.js",
     "db:normalize-names": "node src/db-normalize-names.js",
     "db:restore": "node src/db-restore.js",
+    "prod:check": "node src/prod-check.js",
     "migrate": "node src/migrate.js",
+    "migrate:data:sqlite-to-postgres": "node src/migrate-data-sqlite-to-postgres.js",
+    "repair:user-coordinador-links": "node src/repair-user-coordinador-links.js",
+    "rotate:passwords": "node src/rotate-passwords.js",
     "seed": "node src/seed.js",
     "import:proyecciones-uf": "node src/import-proyecciones-uf.js"
   },
@@ -22,6 +26,7 @@
     "dotenv": "^16.4.7",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "pg": "^8.21.0",
     "uuid": "^11.0.5"
   },
   "devDependencies": {

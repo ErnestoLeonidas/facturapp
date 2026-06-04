@@ -1,10 +1,11 @@
-const db = require('../db');
+const db = require('../db-async');
 
-function generarFolio() {
+async function generarFolio(conn = db) {
   const year = new Date().getFullYear();
-  const rows = db.prepare(
-    `SELECT folio FROM solicitud_factura WHERE folio LIKE ?`
-  ).all(`SF-${year}-%`);
+  const rows = await conn.all(
+    'SELECT folio FROM solicitud_factura WHERE folio LIKE ?',
+    [`SF-${year}-%`]
+  );
 
   const ultimo = rows.reduce((max, row) => {
     const match = String(row.folio || '').match(new RegExp(`^SF-${year}-(\\d+)$`));

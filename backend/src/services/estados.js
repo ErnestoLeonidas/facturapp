@@ -1,4 +1,4 @@
-const db = require('../db');
+const db = require('../db-async');
 const { v4: uuidv4 } = require('uuid');
 
 const TRANSICIONES = {
@@ -25,8 +25,8 @@ function transicionValida(desde, hacia) {
   return (TRANSICIONES[desde] || []).includes(hacia);
 }
 
-function cambiarEstado(solicitudId, hacia, usuario = 'sistema', comentario = '') {
-  const sol = db.prepare('SELECT estado FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(solicitudId);
+async function cambiarEstado(solicitudId, hacia, usuario = 'sistema', comentario = '', conn = db) {
+  const sol = await conn.get('SELECT estado FROM solicitud_factura WHERE id = ? AND is_delete = 0', [solicitudId]);
   if (!sol) throw Object.assign(new Error('Solicitud no encontrada'), { code: 'NOT_FOUND' });
 
   const desde = sol.estado === 'FACTURADO' ? 'FACTURA SOLICITADA' : sol.estado;
@@ -37,9 +37,15 @@ function cambiarEstado(solicitudId, hacia, usuario = 'sistema', comentario = '')
     throw err;
   }
 
-  db.prepare('UPDATE solicitud_factura SET estado = ?, updated_at = datetime(\'now\') WHERE id = ?').run(destino, solicitudId);
-  db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(uuidv4(), solicitudId, desde, destino, usuario, comentario || '');
+  await conn.run('UPDATE solicitud_factura SET estado = ?, updated_at = ? WHERE id = ?', [destino, db.nowText(), solicitudId]);
+  await conn.run('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?, ?, ?, ?, ?, ?)', [
+    uuidv4(),
+    solicitudId,
+    desde,
+    destino,
+    usuario,
+    comentario || ''
+  ]);
 
   return destino;
 }

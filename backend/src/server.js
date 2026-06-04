@@ -1,12 +1,18 @@
-require('dotenv').config();
+const { requireProductionEnv } = require('./config/env');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+requireProductionEnv();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const corsOrigin = process.env.CORS_ORIGIN || true;
+app.use(cors({
+  origin: corsOrigin === 'true' ? true : corsOrigin,
+  credentials: true
+}));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(require('./services/auth').attachUser);

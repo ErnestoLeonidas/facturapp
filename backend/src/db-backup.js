@@ -1,9 +1,9 @@
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
+const env = require('./config/env');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'storage', 'facturapp.sqlite');
-const BACKUP_DIR = process.env.DB_BACKUP_DIR || path.join(__dirname, '..', 'backups');
+const DB_PATH = env.sqlitePath();
+const BACKUP_DIR = env.backupDir();
 
 function timestamp() {
   const d = new Date();

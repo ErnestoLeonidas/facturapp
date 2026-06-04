@@ -73,7 +73,7 @@ window.ProyeccionesView = {
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center"><strong>Vista general resumida</strong><span class="small text-muted" id="proy-total"></span></div>
         <div class="table-responsive proy-table-wrap">
-          <table class="table table-sm table-hover align-middle mb-0 proy-table">
+          <table class="table table-sm table-hover align-middle mb-0 proy-summary-table">
             <thead id="proy-table-head"></thead>
             <tbody id="proy-table-body"><tr><td class="text-muted py-3">Cargando...</td></tr></tbody>
           </table>
@@ -153,8 +153,11 @@ window.ProyeccionesView = {
     $('#btn-grid-reload').on('click', () => ProyeccionesView._recalcularGrilla());
     $('#btn-grid-save').on('click', () => ProyeccionesView._guardarPendientes());
     $('#btn-grid-version').on('click', () => ProyeccionesView._crearVersion());
-    $('#btn-grid-import').on('click', () => ProyeccionesView._openImport());
-    $('#btn-grid-export').on('click', () => UI.toast('Export preparado para una fase posterior.', 'info'));
+    $('#btn-grid-import').on('click', () => ProyeccionesView._openImport({
+      source: 'grilla',
+      anio: Number($('#grid-anio').val()) || ProyeccionesView.state.anio
+    }));
+    $('#btn-grid-export').on('click', () => ProyeccionesView._exportarGrilla());
     $('#btn-grid-hide-columns').on('click', () => ProyeccionesView._openColumnModal());
     $('#btn-grid-reset-columns').on('click', () => ProyeccionesView._resetGridColumns());
     ProyeccionesView._loadGrilla();
@@ -456,6 +459,18 @@ window.ProyeccionesView = {
       .catch(e => UI.toast(e.message || 'No se pudieron guardar los cambios', 'danger'));
   },
 
+  _exportarGrilla() {
+    const params = ProyeccionesView._gridParams();
+    const $button = $('#btn-grid-export');
+    $button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Exportando');
+    AdminService.exportarProyecciones(params)
+      .then(() => UI.toast('Grilla exportada', 'success'))
+      .catch(e => UI.toast(e.message || 'No se pudo exportar la grilla', 'danger'))
+      .finally(() => {
+        $button.prop('disabled', false).html('<i class="bi bi-download"></i> Exportar');
+      });
+  },
+
   _recalcularGrilla() {
     const payload = ProyeccionesView._gridParams();
     AdminService.recalcularProyecciones(payload).then(preview => {
@@ -479,7 +494,11 @@ window.ProyeccionesView = {
       <div class="proyecciones-toolbar mb-3">
         <div class="proy-filter-grid">
           <div class="proy-field proy-field-year"><label class="form-label">Año</label><input class="form-control" id="ver-anio" type="number" value="${ProyeccionesView.state.anio}" min="2020" max="2100"></div>
-          <div class="proy-actions"><button class="btn btn-outline-secondary" id="btn-ver-reload"><i class="bi bi-arrow-clockwise"></i> Recargar</button><button class="btn btn-primary" id="btn-ver-create"><i class="bi bi-layers"></i> Crear versión</button></div>
+          <div class="proy-actions">
+            <button class="btn btn-outline-secondary" id="btn-ver-reload"><i class="bi bi-arrow-clockwise"></i> Recargar</button>
+            <button class="btn btn-primary" id="btn-ver-create"><i class="bi bi-layers"></i> Crear versión</button>
+            <button class="btn btn-outline-secondary" id="btn-ver-import"><i class="bi bi-upload"></i> Subir Excel</button>
+          </div>
         </div>
       </div>
       <div class="card"><div class="card-header"><strong>Versiones</strong></div><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Número</th><th>Nombre</th><th>Año</th><th>Estado</th><th>Origen</th><th>Items</th><th class="text-end">Acciones</th></tr></thead><tbody id="ver-body"></tbody></table></div></div>
@@ -487,6 +506,10 @@ window.ProyeccionesView = {
     $('#ver-anio').on('change', () => ProyeccionesView._loadVersiones());
     $('#btn-ver-reload').on('click', () => ProyeccionesView._loadVersiones());
     $('#btn-ver-create').on('click', () => AdminService.crearVersionProyecciones({ anio: Number($('#ver-anio').val()) || ProyeccionesView.state.anio }).then(() => ProyeccionesView._loadVersiones()));
+    $('#btn-ver-import').on('click', () => ProyeccionesView._openImport({
+      source: 'versiones',
+      anio: Number($('#ver-anio').val()) || ProyeccionesView.state.anio
+    }));
     ProyeccionesView._loadVersiones();
   },
 
@@ -548,7 +571,7 @@ window.ProyeccionesView = {
     return `
       <div class="modal fade" id="proy-import-modal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
-          <div class="modal-header"><h5 class="modal-title">Importar Excel histórico</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+          <div class="modal-header"><h5 class="modal-title">Subir Excel de proyecciones</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
           <div class="modal-body">
             <div class="row g-2">
               <div class="col-md-6"><label class="form-label">Archivo Excel</label><input class="form-control" id="proy-import-file" type="file" accept=".xlsx,.xls"></div>
@@ -557,15 +580,21 @@ window.ProyeccionesView = {
             </div>
             <div id="proy-import-result" class="mt-3"></div>
           </div>
-          <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-outline-primary" id="btn-proy-preview-import">Preview</button><button class="btn btn-primary" id="btn-proy-confirm-import" disabled>Confirmar y crear versión</button></div>
+          <div class="modal-footer"><button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button><button class="btn btn-outline-primary" id="btn-proy-preview-import">Previsualizar</button><button class="btn btn-primary" id="btn-proy-confirm-import" disabled>Confirmar y crear versión</button></div>
         </div></div>
       </div>
     `;
   },
 
-  _openImport() {
+  _openImport(options = {}) {
     ProyeccionesView.state.importPayload = null;
+    ProyeccionesView.state.importSource = options.source || ProyeccionesView.state.tab;
+    const anio = Number(options.anio) || ProyeccionesView.state.anio || new Date().getFullYear();
+    $('#proy-import-anio').val(anio);
+    $('#proy-import-file').val('');
+    $('#proy-import-sheet').val('');
     $('#proy-import-result').empty();
+    $('#btn-proy-preview-import').prop('disabled', false).html('Previsualizar');
     $('#btn-proy-confirm-import').prop('disabled', true);
     $('#btn-proy-preview-import').off('click').on('click', () => ProyeccionesView._previewImport());
     $('#btn-proy-confirm-import').off('click').on('click', () => ProyeccionesView._confirmImport());
@@ -575,14 +604,21 @@ window.ProyeccionesView = {
   _previewImport() {
     const file = document.getElementById('proy-import-file').files[0];
     if (!file) return $('#proy-import-result').html('<div class="alert alert-warning">Selecciona un archivo Excel.</div>');
+    $('#btn-proy-preview-import').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Leyendo');
+    $('#btn-proy-confirm-import').prop('disabled', true);
     $('#proy-import-result').html('<div class="text-muted small">Leyendo archivo...</div>');
     ProyeccionesView._fileToBase64(file).then(fileBase64 => {
       ProyeccionesView.state.importPayload = { fileBase64, fileName: file.name, anio: Number($('#proy-import-anio').val()) || ProyeccionesView.state.anio, sheet: $('#proy-import-sheet').val() };
       return AdminService.previewImportProyecciones(ProyeccionesView.state.importPayload);
     }).then(result => {
-      $('#btn-proy-confirm-import').prop('disabled', false);
+      const cambios = result.resumen_cambios || {};
+      const hasChanges = Number(cambios.total_cambios || 0) > 0;
+      $('#btn-proy-confirm-import').prop('disabled', !hasChanges);
       const version = result.version ? `<strong>${ProyeccionesView._esc(result.version.nombre)}</strong>` : 'nueva versión';
       const omitidas = (result.omitidas || []).length;
+      const message = cambios.sin_cambios
+        ? `<div class="alert alert-success mb-3">El Excel contiene lo mismo que se visualiza actualmente en la versión activa. No hay cambios para aplicar.</div>`
+        : `<div class="alert alert-info mb-3">Se detectaron ${ProyeccionesView._num(cambios.total_cambios || 0)} cambios: ${ProyeccionesView._num(cambios.filas_nuevas || 0)} filas nuevas, ${ProyeccionesView._num(cambios.filas_actualizadas || 0)} filas con cambios y ${ProyeccionesView._num(cambios.celdas_actualizadas || 0)} columnas/meses a actualizar.</div>`;
       const rows = (result.preview || []).map(row => `
         <tr>
           <td>${ProyeccionesView._esc(row.accion || '')}</td>
@@ -590,6 +626,7 @@ window.ProyeccionesView = {
           <td>${ProyeccionesView._esc(row.cliente || '')}</td>
           <td>${ProyeccionesView._esc(row.ms || '')}</td>
           <td>${ProyeccionesView._esc(row.proyecto || '')}</td>
+          <td>${ProyeccionesView._esc(row.columna || '')}</td>
           <td class="text-end">${row.valor_excel == null ? '' : ProyeccionesView._clp(row.valor_excel)}</td>
           <td class="text-end">${row.valor_actual == null ? '' : ProyeccionesView._clp(row.valor_actual)}</td>
           <td>${ProyeccionesView._esc(row.motivo || '')}</td>
@@ -597,23 +634,37 @@ window.ProyeccionesView = {
       `).join('');
       const previewVersion = result.version ? version : 'nueva versión';
       $('#proy-import-result').html(`
-        <div class="alert alert-info">Preview: ${result.total_items} filas válidas para ${previewVersion}. ${omitidas} filas omitidas.</div>
+        ${message}
+        <div class="small text-muted mb-2">Preview: ${result.total_items} filas válidas para ${previewVersion}. ${omitidas} filas omitidas.</div>
         <div class="table-responsive proy-preview-table">
           <table class="table table-sm align-middle">
-            <thead><tr><th>Acción</th><th class="text-end">Orden fila</th><th>Cliente</th><th>MS</th><th>Proyecto</th><th class="text-end">Valor Excel</th><th class="text-end">Valor actual</th><th>Motivo</th></tr></thead>
-            <tbody>${rows || '<tr><td colspan="8" class="text-muted">No hay filas válidas para importar.</td></tr>'}</tbody>
+            <thead><tr><th>Acción</th><th class="text-end">Orden fila</th><th>Cliente</th><th>MS</th><th>Proyecto</th><th>Columna/Mes</th><th class="text-end">Valor Excel</th><th class="text-end">Valor actual</th><th>Motivo</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="9" class="text-muted">No hay filas válidas para importar.</td></tr>'}</tbody>
           </table>
         </div>
       `);
-    }).catch(e => $('#proy-import-result').html(`<div class="alert alert-danger">${e.message || 'No se pudo previsualizar'}</div>`));
+    }).catch(e => $('#proy-import-result').html(`<div class="alert alert-danger">${e.message || 'No se pudo previsualizar'}</div>`))
+      .finally(() => $('#btn-proy-preview-import').prop('disabled', false).html('Previsualizar'));
   },
 
   _confirmImport() {
     if (!ProyeccionesView.state.importPayload) return;
+    let imported = false;
+    $('#btn-proy-confirm-import').prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Importando');
     AdminService.confirmarImportProyecciones(ProyeccionesView.state.importPayload).then(result => {
+      imported = true;
       $('#proy-import-result').html(`<div class="alert alert-success">Versión creada: ${ProyeccionesView._esc(result.version.nombre)}</div>`);
-      ProyeccionesView._loadGrilla();
-    }).fail(e => $('#proy-import-result').html(`<div class="alert alert-danger">${e.message || 'No se pudo importar'}</div>`));
+      ProyeccionesView.state.anio = Number(result.version.anio) || ProyeccionesView.state.importPayload.anio || ProyeccionesView.state.anio;
+      ProyeccionesView.state.importPayload = null;
+      if (ProyeccionesView.state.importSource === 'versiones') {
+        $('#ver-anio').val(ProyeccionesView.state.anio);
+        ProyeccionesView._loadVersiones();
+      } else if (ProyeccionesView.state.importSource === 'grilla') {
+        $('#grid-anio').val(ProyeccionesView.state.anio);
+        ProyeccionesView._loadGrilla();
+      }
+    }).fail(e => $('#proy-import-result').html(`<div class="alert alert-danger">${e.message || 'No se pudo importar'}</div>`))
+      .always(() => $('#btn-proy-confirm-import').prop('disabled', imported || !ProyeccionesView.state.importPayload).html('Confirmar y crear versión'));
   },
 
   _renderResumenFilters(filtros) {

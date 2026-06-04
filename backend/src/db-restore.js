@@ -1,9 +1,9 @@
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { backupDatabase } = require('./db-backup');
+const env = require('./config/env');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'storage', 'facturapp.sqlite');
+const DB_PATH = env.sqlitePath();
 
 function restoreDatabase(source, options = {}) {
   if (!source) throw new Error('Debes indicar la ruta del backup a restaurar.');

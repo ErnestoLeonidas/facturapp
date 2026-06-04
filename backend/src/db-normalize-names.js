@@ -1,5 +1,4 @@
 require('dotenv').config();
-const db = require('./db');
 const { backupDatabase } = require('./db-backup');
 
 const NAME_COLUMNS = [
@@ -20,6 +19,10 @@ const NAME_COLUMNS = [
   ['solicitud_programada', 'nombre']
 ];
 
+function getDb() {
+  return require('./db');
+}
+
 function upperName(value) {
   if (value === undefined || value === null) return value;
   const text = String(value).trim().replace(/\s+/g, ' ');
@@ -27,10 +30,12 @@ function upperName(value) {
 }
 
 function tableHasColumn(table, column) {
+  const db = getDb();
   return db.prepare(`PRAGMA table_info('${table}')`).all().some(col => col.name === column);
 }
 
 function normalizeNames({ backup = false } = {}) {
+  const db = getDb();
   if (backup) {
     const result = backupDatabase('pre-normalize-names');
     if (!result.skipped) console.log(`Backup previo: ${result.db}`);
@@ -61,6 +66,7 @@ function normalizeNames({ backup = false } = {}) {
 }
 
 function nonUppercaseNames() {
+  const db = getDb();
   const issues = [];
   NAME_COLUMNS.forEach(([table, column]) => {
     if (!tableHasColumn(table, column)) return;

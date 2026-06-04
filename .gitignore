@@ -12,6 +12,8 @@ coverage/
 .env
 .env.*
 !.env.example
+!backend/.env.example
+!backend/.env.production.example
 
 # Credentials - never commit
 service-account.json
@@ -26,6 +28,7 @@ google-credentials.json
 *.db
 *.db-*
 backend/backups/
+backups/
 backend/storage/
 storage/
 

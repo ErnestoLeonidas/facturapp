@@ -1,58 +1,80 @@
 const r = require('express').Router();
-const db = require('../db');
+const db = require('../db-async');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { cambiarEstado, puedeEditar } = require('../services/estados');
 const { generarFolio } = require('../utils/folio');
 const audit = require('../services/audit');
 
-const EMPRESA_EMISORA_UNICA = 'MAS_CONSULTORES';
+const EMPRESA_EMISORA_DEFAULT = 'MAS_CONSULTORES';
+const EMPRESAS_EMISORAS_SOLICITUD = ['MAS_CONSULTORES', 'INSTITUTO_ROI'];
 const TIPO_IMPUESTO_UNICO = 'AFECTO_IVA';
 
-function hydrateOne(sol) {
-  if (!sol) return null;
-  sol.items = db.prepare('SELECT * FROM solicitud_item WHERE solicitud_id = ? ORDER BY orden').all(sol.id);
-  sol.cps = db.prepare(`SELECT sc.*, cp.codigo, cp.nombre as cp_nombre, cp.area
-    FROM solicitud_cp sc JOIN cp ON cp.id = sc.cp_id WHERE sc.solicitud_id = ? ORDER BY sc.orden`).all(sol.id);
-  sol.receptores = db.prepare(`SELECT r.* FROM receptor r JOIN solicitud_receptor sr ON sr.receptor_id = r.id WHERE sr.solicitud_id = ?`).all(sol.id);
-  sol.cliente = db.prepare('SELECT * FROM cliente WHERE id = ?').get(sol.cliente_id);
-  if (sol.cliente) {
-    sol.cliente.receptores = receptoresActivosCliente(sol.cliente_id);
-    sol.cliente.cps = db.prepare('SELECT * FROM cp WHERE cliente_id = ? AND activo = 1 ORDER BY codigo').all(sol.cliente_id);
-  }
-  if (!sol.coordinador_id) {
-    const sugerido = coordinadorSugeridoSolicitud(sol.id, sol.cliente_id);
-    if (sugerido) sol.coordinador_id = sugerido.id;
-  }
-  sol.coordinador = sol.coordinador_id ? db.prepare('SELECT id, nombre, email FROM coordinador WHERE id = ?').get(sol.coordinador_id) : null;
-  sol.empresa = db.prepare('SELECT * FROM empresa_emisora WHERE codigo = ?').get(sol.empresa_emisora);
-  sol.historial = db.prepare('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC').all(sol.id);
-  return sol;
+function coordinadorScope(req) {
+  if (!req.user || req.user.rol === 'admin') return null;
+  return req.user.coordinador_id || '__none__';
 }
 
-function receptoresActivosCliente(clienteId) {
-  return db.prepare('SELECT * FROM receptor WHERE cliente_id = ? AND activo = 1 ORDER BY nombre').all(clienteId);
+function aplicarScope(sql, vals, req, alias = 'sf') {
+  const coordinatorId = coordinadorScope(req);
+  if (!coordinatorId) return sql;
+  vals.push(coordinatorId === '__none__' ? '__sin_coordinador__' : coordinatorId);
+  return `${sql} AND ${alias}.coordinador_id = ?`;
 }
 
-function receptoresPayloadODefecto(receptores, clienteId) {
+function puedeVerSolicitud(req, sol) {
+  const coordinatorId = coordinadorScope(req);
+  if (!coordinatorId) return true;
+  return coordinatorId !== '__none__' && sol && sol.coordinador_id === coordinatorId;
+}
+
+async function datosFacturacionCliente(cliente) {
+  if (!cliente) return [];
+  const original = {
+    id: '',
+    cliente_id: cliente.id,
+    etiqueta: 'Datos cliente 1',
+    razon_social: cliente.razon_social,
+    rut: cliente.rut,
+    giro: cliente.giro,
+    direccion: cliente.direccion,
+    es_original: 1
+  };
+  const extras = await db.all(`
+    SELECT id, cliente_id, etiqueta, razon_social, rut, giro, direccion, 0 AS es_original
+    FROM cliente_facturacion
+    WHERE cliente_id = ?
+      AND activo = 1
+    ORDER BY created_at, razon_social
+  `, [cliente.id]);
+  return [original, ...extras];
+}
+
+async function datosFacturacionSolicitud(sol) {
+  if (!sol || !sol.cliente) return null;
+  if (!sol.cliente_facturacion_id) return (await datosFacturacionCliente(sol.cliente))[0] || null;
+  return await db.get(`
+    SELECT id, cliente_id, etiqueta, razon_social, rut, giro, direccion, 0 AS es_original
+    FROM cliente_facturacion
+    WHERE id = ?
+      AND cliente_id = ?
+      AND activo = 1
+  `, [sol.cliente_facturacion_id, sol.cliente_id]) || (await datosFacturacionCliente(sol.cliente))[0] || null;
+}
+
+async function receptoresActivosCliente(clienteId) {
+  return db.all('SELECT * FROM receptor WHERE cliente_id = ? AND activo = 1 ORDER BY nombre', [clienteId]);
+}
+
+async function receptoresPayloadODefecto(receptores, clienteId) {
   if (receptores && receptores.length) return receptores;
-  return receptoresActivosCliente(clienteId).map(r => ({ receptor_id: r.id }));
+  return (await receptoresActivosCliente(clienteId)).map(row => ({ receptor_id: row.id }));
 }
 
-function insertarReceptoresSolicitud(solicitudId, receptores) {
-  (receptores || []).forEach(rec => {
-    const recId = rec.receptor_id || rec.id;
-    if (recId) {
-      db.prepare('INSERT OR IGNORE INTO solicitud_receptor (solicitud_id, receptor_id) VALUES (?,?)')
-        .run(solicitudId, recId);
-    }
-  });
-}
-
-function coordinadorPorClienteYCPNombre(clienteId, cpNombre) {
+async function coordinadorPorClienteYCPNombre(clienteId, cpNombre) {
   const nombre = String(cpNombre || '').trim();
   if (nombre) {
-    const exacto = db.prepare(`
+    const exacto = await db.get(`
       SELECT co.id, co.nombre, co.email
       FROM cliente_coordinador cc
       JOIN coordinador co ON co.id = cc.coordinador_id
@@ -62,11 +84,11 @@ function coordinadorPorClienteYCPNombre(clienteId, cpNombre) {
         AND co.activo = 1
       ORDER BY lower(trim(co.nombre))
       LIMIT 1
-    `).get(clienteId, nombre);
+    `, [clienteId, nombre]);
     if (exacto) return exacto;
   }
 
-  return db.prepare(`
+  return db.get(`
     SELECT co.id, co.nombre, co.email
     FROM cliente_coordinador cc
     JOIN coordinador co ON co.id = cc.coordinador_id
@@ -76,28 +98,28 @@ function coordinadorPorClienteYCPNombre(clienteId, cpNombre) {
       AND co.activo = 1
     ORDER BY lower(trim(co.nombre))
     LIMIT 1
-  `).get(clienteId);
+  `, [clienteId]);
 }
 
-function coordinadorSugeridoSolicitud(solicitudId, clienteId) {
-  const cps = db.prepare(`
+async function coordinadorSugeridoSolicitud(solicitudId, clienteId) {
+  const cps = await db.all(`
     SELECT DISTINCT cp.nombre
     FROM solicitud_cp sc
     JOIN cp ON cp.id = sc.cp_id
     WHERE sc.solicitud_id = ?
     ORDER BY cp.nombre
-  `).all(solicitudId);
+  `, [solicitudId]);
 
   for (const cp of cps) {
-    const coord = coordinadorPorClienteYCPNombre(clienteId, cp.nombre);
+    const coord = await coordinadorPorClienteYCPNombre(clienteId, cp.nombre);
     if (coord) return coord;
   }
   return coordinadorPorClienteYCPNombre(clienteId, null);
 }
 
-function aplicarCoordinadorSugerido(row) {
+async function aplicarCoordinadorSugerido(row) {
   if (!row || row.coordinador_id) return row;
-  const coord = coordinadorSugeridoSolicitud(row.id, row.cliente_id);
+  const coord = await coordinadorSugeridoSolicitud(row.id, row.cliente_id);
   if (coord) {
     row.coordinador_id = coord.id;
     row.coordinador_nombre = coord.nombre;
@@ -105,32 +127,88 @@ function aplicarCoordinadorSugerido(row) {
   return row;
 }
 
-function solicitudMaterializadaDesdeProyeccion(proyeccionId, incluirEliminadas = false) {
-  let sql = `
-    SELECT sf.*
-    FROM solicitud_factura sf
-    JOIN historial_estado he ON he.solicitud_id = sf.id
-    WHERE he.comentario = ?
-  `;
-  if (!incluirEliminadas) sql += ' AND sf.is_delete = 0';
-  sql += ' ORDER BY sf.created_at DESC LIMIT 1';
-  return db.prepare(sql).get(`Creada desde proyeccion ${proyeccionId}`);
+async function hydrateOne(sol) {
+  if (!sol) return null;
+  sol.items = await db.all('SELECT * FROM solicitud_item WHERE solicitud_id = ? ORDER BY orden', [sol.id]);
+  sol.cps = await db.all(`SELECT sc.*, cp.codigo, cp.nombre as cp_nombre, cp.area
+    FROM solicitud_cp sc JOIN cp ON cp.id = sc.cp_id WHERE sc.solicitud_id = ? ORDER BY sc.orden`, [sol.id]);
+  sol.receptores = await db.all(`SELECT r.* FROM receptor r JOIN solicitud_receptor sr ON sr.receptor_id = r.id WHERE sr.solicitud_id = ?`, [sol.id]);
+  sol.cliente = await db.get('SELECT * FROM cliente WHERE id = ?', [sol.cliente_id]);
+  if (sol.cliente) {
+    sol.cliente.receptores = await receptoresActivosCliente(sol.cliente_id);
+    sol.cliente.cps = await db.all('SELECT * FROM cp WHERE cliente_id = ? AND activo = 1 ORDER BY codigo', [sol.cliente_id]);
+    sol.cliente.datos_facturacion = await datosFacturacionCliente(sol.cliente);
+  }
+  sol.datos_facturacion = await datosFacturacionSolicitud(sol);
+  if (!sol.coordinador_id) {
+    const sugerido = await coordinadorSugeridoSolicitud(sol.id, sol.cliente_id);
+    if (sugerido) sol.coordinador_id = sugerido.id;
+  }
+  sol.coordinador = sol.coordinador_id ? await db.get('SELECT id, nombre, email FROM coordinador WHERE id = ?', [sol.coordinador_id]) : null;
+  sol.empresa = await db.get('SELECT * FROM empresa_emisora WHERE codigo = ?', [sol.empresa_emisora]);
+  sol.historial = await db.all('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC', [sol.id]);
+  return sol;
 }
 
-function proyeccionDescartada(proyeccionId) {
-  const row = db.prepare(`
-    SELECT sf.id
-    FROM solicitud_factura sf
-    JOIN historial_estado he ON he.solicitud_id = sf.id
-    WHERE he.comentario = ?
-      AND sf.is_delete = 1
-    LIMIT 1
-  `).get(`Creada desde proyeccion ${proyeccionId}`);
-  return !!row;
+async function validarClienteFacturacion(clienteId, datoId) {
+  if (!datoId) return null;
+  const row = await db.get(`
+    SELECT id FROM cliente_facturacion
+    WHERE id = ?
+      AND cliente_id = ?
+      AND activo = 1
+  `, [datoId, clienteId]);
+  if (!row) {
+    throw Object.assign(new Error('Datos de facturacion no pertenecen al cliente seleccionado'), { code: 'VALIDATION_ERROR' });
+  }
+  return row.id;
 }
 
-function calcularTotales(items, empresaCodigo, monedaBase, ufValor) {
-  const empresa = db.prepare('SELECT * FROM empresa_emisora WHERE codigo = ?').get(empresaCodigo);
+async function insertarReceptoresSolicitud(conn, solicitudId, receptores) {
+  for (const rec of (receptores || [])) {
+    const recId = rec.receptor_id || rec.id;
+    if (recId) {
+      await conn.run('INSERT INTO solicitud_receptor (solicitud_id, receptor_id) VALUES (?,?) ON CONFLICT DO NOTHING', [solicitudId, recId]);
+    }
+  }
+}
+
+function redondearIvaCLP(valor) {
+  return Math.ceil((Number(valor) || 0) / 10) * 10;
+}
+
+function parseNumero(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const limpio = String(value)
+    .replace(/\$/g, '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.');
+  const numero = Number(limpio);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function flagManual(value) {
+  return value === true || value === 1 || value === '1' || value === 'true' || value === 'on';
+}
+
+function montoClpManual(cp) {
+  if (!flagManual(cp.monto_clp_es_manual)) return null;
+  const manual = parseNumero(cp.monto_clp_manual !== undefined ? cp.monto_clp_manual : cp.monto_clp);
+  return manual === null ? null : Math.round(manual);
+}
+
+function montoClpDesdeCP(cp, ufValor) {
+  const manual = montoClpManual(cp);
+  if (manual !== null) return manual;
+  const montoUF = Number(cp.monto_uf);
+  if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * Number(ufValor));
+  return Math.round(Number(cp.monto_clp) || 0);
+}
+
+async function calcularTotales(items, empresaCodigo, monedaBase, ufValor) {
+  const empresa = await db.get('SELECT * FROM empresa_emisora WHERE codigo = ?', [empresaCodigo]);
   const afectoIva = empresa && empresa.afecto_iva;
   const ivaPct = (empresa && empresa.iva_pct) || 0.19;
 
@@ -151,45 +229,48 @@ function calcularTotales(items, empresaCodigo, monedaBase, ufValor) {
   return { items: itemsCalc, monto_neto_clp: netoCLP, monto_iva_clp: ivaCLP, monto_total_clp: totalCLP };
 }
 
-function redondearIvaCLP(valor) {
-  return Math.ceil((Number(valor) || 0) / 10) * 10;
-}
-
-function montoClpDesdeCP(cp, ufValor) {
-  const montoUF = Number(cp.monto_uf);
-  if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * Number(ufValor));
-  return Math.round(Number(cp.monto_clp) || 0);
-}
-
-function calcularTotalesDesdeCPs(cps, empresaCodigo, ufValor) {
-  const empresa = db.prepare('SELECT * FROM empresa_emisora WHERE codigo = ?').get(empresaCodigo);
+async function calcularTotalesDesdeCPs(cps, empresaCodigo, ufValor, montoNetoManual) {
+  const empresa = await db.get('SELECT * FROM empresa_emisora WHERE codigo = ?', [empresaCodigo]);
   const afectoIva = empresa && empresa.afecto_iva;
   const ivaPct = (empresa && empresa.iva_pct) || 0.19;
-  const netoCLP = (cps || []).reduce((sum, cp) => sum + montoClpDesdeCP(cp, ufValor), 0);
+  const netoAutomatico = (cps || []).reduce((sum, cp) => sum + montoClpDesdeCP(cp, ufValor), 0);
+  const netoCLP = montoNetoManual !== null && montoNetoManual !== undefined
+    ? Math.round(montoNetoManual)
+    : netoAutomatico;
   const ivaCLP = afectoIva ? redondearIvaCLP(netoCLP * ivaPct) : 0;
   return { monto_neto_clp: netoCLP, monto_iva_clp: ivaCLP, monto_total_clp: netoCLP + ivaCLP };
 }
 
-function resolverCPDeCliente(cpRef, clienteId) {
+async function resolverCPDeCliente(cpRef, clienteId) {
   if (!cpRef) return null;
-  return db.prepare(`
+  return db.get(`
     SELECT id FROM cp
     WHERE activo = 1
       AND cliente_id = ?
       AND (id = ? OR codigo = ?)
-  `).get(clienteId, cpRef, cpRef);
+  `, [clienteId, cpRef, cpRef]);
 }
 
-function normalizarCPsDeCliente(cps, clienteId, ufValor) {
-  return (cps || []).map((c, i) => {
-    const cpRow = resolverCPDeCliente(c.cp_id || c.cp_codigo, clienteId);
+async function normalizarCPsDeCliente(cps, clienteId, ufValor) {
+  const normalizados = [];
+  for (const [i, c] of (cps || []).entries()) {
+    const cpRow = await resolverCPDeCliente(c.cp_id || c.cp_codigo, clienteId);
     if (!cpRow) {
       throw Object.assign(new Error('CP no pertenece al cliente seleccionado'), { code: 'VALIDATION_ERROR' });
     }
     const montoUFInput = c.monto_uf !== undefined && c.monto_uf !== null && c.monto_uf !== '' ? Number(c.monto_uf) : null;
     const montoUF = Number.isFinite(montoUFInput) ? montoUFInput : null;
-    return { cp_id: cpRow.id, monto_uf: montoUF, monto_clp: montoClpDesdeCP({ ...c, monto_uf: montoUF }, ufValor), orden: i };
-  });
+    const manual = montoClpManual(c);
+    normalizados.push({
+      cp_id: cpRow.id,
+      monto_uf: montoUF,
+      monto_clp: montoClpDesdeCP({ ...c, monto_uf: montoUF }, ufValor),
+      monto_clp_manual: manual,
+      monto_clp_es_manual: manual !== null ? 1 : 0,
+      orden: i
+    });
+  }
+  return normalizados;
 }
 
 const ESTADOS_SOLICITUD_VALIDOS = [
@@ -205,9 +286,57 @@ function normalizarEstadoSolicitud(estado) {
   return valor;
 }
 
-function coordinadorActivo(id) {
+async function coordinadorActivo(id) {
   if (!id) return null;
-  return db.prepare('SELECT id FROM coordinador WHERE id = ? AND activo = 1').get(id);
+  return db.get('SELECT id FROM coordinador WHERE id = ? AND activo = 1', [id]);
+}
+
+async function clienteActivo(id) {
+  if (!id) return null;
+  return db.get("SELECT id, coordinador_id FROM cliente WHERE id = ? AND estado <> 'Inactivo'", [id]);
+}
+
+async function clienteAsignadoAlCoordinador(clienteId, coordinadorId) {
+  if (!clienteId || !coordinadorId) return false;
+  const cliente = await clienteActivo(clienteId);
+  if (!cliente) return false;
+  if (cliente.coordinador_id === coordinadorId) return true;
+  return !!(await db.get(`
+    SELECT id
+    FROM cliente_coordinador
+    WHERE cliente_id = ?
+      AND coordinador_id = ?
+      AND activo = 1
+    LIMIT 1
+  `, [clienteId, coordinadorId]));
+}
+
+async function normalizarReceptoresDeCliente(receptores, clienteId) {
+  const payload = await receptoresPayloadODefecto(receptores, clienteId);
+  if (!payload.length) {
+    throw Object.assign(new Error('El cliente seleccionado no tiene receptores activos'), { code: 'VALIDATION_ERROR' });
+  }
+  const vistos = new Set();
+  const normalizados = [];
+  for (const rec of payload) {
+    const recId = rec.receptor_id || rec.id;
+    if (!recId) continue;
+    const row = await db.get(`
+      SELECT id
+      FROM receptor
+      WHERE id = ?
+        AND cliente_id = ?
+        AND activo = 1
+    `, [recId, clienteId]);
+    if (!row) {
+      throw Object.assign(new Error('Receptor no pertenece al cliente seleccionado o esta inactivo'), { code: 'VALIDATION_ERROR' });
+    }
+    if (!vistos.has(row.id)) {
+      vistos.add(row.id);
+      normalizados.push({ receptor_id: row.id });
+    }
+  }
+  return normalizados;
 }
 
 function validarDatosPorEstado(s, netoCLP) {
@@ -218,7 +347,6 @@ function validarDatosPorEstado(s, netoCLP) {
 
   if (ESTADOS_REQUIEREN_DATOS_COMPLETOS.includes(s.estado)) {
     if (!s.coordinador_id) errs.push('coordinador_id');
-    else if (!coordinadorActivo(s.coordinador_id)) errs.push('coordinador_id activo');
     if (!s.glosa) errs.push('glosa');
     if (!s.observaciones) errs.push('observaciones');
     if (!s.hes_numero) errs.push('hes_numero');
@@ -252,11 +380,6 @@ function observacionesConUF(observaciones, ufFecha, ufValor) {
   return [base, linea].filter(Boolean).join('\n') || null;
 }
 
-const MESES = [
-  'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
-  'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'
-];
-
 function normalizarTexto(value) {
   return String(value || '')
     .normalize('NFD')
@@ -265,149 +388,25 @@ function normalizarTexto(value) {
     .toUpperCase();
 }
 
-function mesNumero(value) {
-  const n = Number(value);
-  if (Number.isInteger(n) && n >= 1 && n <= 12) return n;
-  const idx = MESES.findIndex(m => normalizarTexto(m) === normalizarTexto(value));
-  return idx >= 0 ? idx + 1 : null;
+function normalizarEmpresaEmisora(empresa) {
+  const codigo = normalizarTexto(empresa || EMPRESA_EMISORA_DEFAULT);
+  if (codigo === 'INSTITUTO_ROY') return 'INSTITUTO_ROI';
+  return codigo;
 }
 
-const TIPOS_IMPUESTO_VALIDOS = [TIPO_IMPUESTO_UNICO];
-
-function normalizarTipoImpuesto(value) {
-  return normalizarTexto(value);
+function empresaEmisoraValida(empresa) {
+  return EMPRESAS_EMISORAS_SOLICITUD.includes(normalizarEmpresaEmisora(empresa));
 }
 
-function tipoImpuestoValido(value) {
-  return normalizarTipoImpuesto(value) === TIPO_IMPUESTO_UNICO;
+function empresaEmisoraSolicitud(empresa) {
+  const codigo = normalizarEmpresaEmisora(empresa);
+  return empresaEmisoraValida(codigo) ? codigo : null;
 }
 
-function validarEmpresaEmisoraUnica(empresa) {
-  return normalizarTexto(empresa || EMPRESA_EMISORA_UNICA) === EMPRESA_EMISORA_UNICA;
+function filtroEmpresasSolicitud(sql, vals, alias = 'sf') {
+  vals.push(...EMPRESAS_EMISORAS_SOLICITUD);
+  return `${sql} AND ${alias}.empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})`;
 }
-
-function periodoDesdeProyeccion(row) {
-  const mes = mesNumero(row.mes);
-  if (!row.anio || !mes) return null;
-  return `${row.anio}-${String(mes).padStart(2, '0')}`;
-}
-
-function empresaDesdeCodigoFacturacion(codigo) {
-  return EMPRESA_EMISORA_UNICA;
-}
-
-function empresaDesdeTipoImpuesto(tipoImpuesto, codigoFacturacion) {
-  const tipo = normalizarTipoImpuesto(tipoImpuesto);
-  if (tipo === TIPO_IMPUESTO_UNICO) return EMPRESA_EMISORA_UNICA;
-  return empresaDesdeCodigoFacturacion(codigoFacturacion);
-}
-
-function proyeccionesParaSolicitudes({ clienteId, estado, periodo, q }) {
-  if (!periodo) return [];
-  const [anioRaw, mesRaw] = String(periodo).split('-');
-  const anio = Number(anioRaw);
-  const mes = mesNumero(mesRaw);
-  if (!anio || !mes) return [];
-
-  let sql = `
-    SELECT
-      pf.*,
-      c.nombre_corto AS cliente_nombre,
-      cp.id AS cp_id
-    FROM proyeccion_facturacion pf
-    JOIN cliente c ON c.id = pf.cliente_id
-    LEFT JOIN cp ON cp.cliente_id = pf.cliente_id AND cp.codigo = pf.codigo AND cp.activo = 1
-    WHERE c.estado = 'Activo'
-      AND pf.tipo_impuesto = ?
-      AND pf.anio = ?`;
-  const vals = [TIPO_IMPUESTO_UNICO, anio];
-  if (clienteId) { sql += ' AND pf.cliente_id = ?'; vals.push(clienteId); }
-  if (estado) { sql += ' AND pf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
-  if (q) {
-    sql += ' AND (pf.cliente LIKE ? OR c.nombre_corto LIKE ? OR pf.codigo LIKE ? OR pf.nombre LIKE ? OR pf.tipo_cp LIKE ?)';
-    vals.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
-  }
-
-  const rows = db.prepare(sql).all(...vals)
-    .filter(row => mesNumero(row.mes) === mes)
-    .filter(row => row.cp_id)
-    .filter(row => !proyeccionDescartada(row.id))
-    .filter(row => {
-      const tipo = normalizarTipoImpuesto(row.tipo_impuesto);
-      if (!TIPOS_IMPUESTO_VALIDOS.includes(tipo)) return true;
-      const existing = db.prepare(`
-        SELECT sf.id
-        FROM solicitud_factura sf
-        JOIN solicitud_cp sc ON sc.solicitud_id = sf.id
-        WHERE sf.is_delete = 0
-          AND sf.cliente_id = ?
-          AND sf.periodo = ?
-          AND sc.cp_id = ?
-          AND sf.empresa_emisora = ?
-        LIMIT 1
-      `).get(row.cliente_id, periodo, row.cp_id, EMPRESA_EMISORA_UNICA);
-      return !existing;
-    });
-
-  return rows.map(row => {
-    const coord = coordinadorPorClienteYCPNombre(row.cliente_id, row.nombre);
-    return {
-    id: `proyeccion:${row.id}`,
-    proyeccion_id: row.id,
-    is_proyeccion: 1,
-    folio: 'PROYECCION',
-    tipo: 'mensual',
-    cliente_id: row.cliente_id,
-    cliente_nombre: row.cliente || row.cliente_nombre,
-    coordinador_id: coord ? coord.id : null,
-    coordinador_nombre: coord ? coord.nombre : null,
-    empresa_emisora: empresaDesdeTipoImpuesto(row.tipo_impuesto, row.codigo_facturacion),
-    periodo,
-    glosa: row.nombre || '',
-    monto_neto_clp: 0,
-    monto_iva_clp: 0,
-    monto_total_clp: 0,
-    monto_uf: Number(row.monto_uf) || 0,
-    estado: row.estado || 'PENDIENTE OC / HES',
-    cp_codigo: row.codigo,
-    cp_nombre: row.nombre,
-    tipo_cp: row.tipo_cp,
-    tipo_impuesto: normalizarTipoImpuesto(row.tipo_impuesto),
-    tipo_impuesto_invalido: !tipoImpuestoValido(row.tipo_impuesto),
-    codigo_facturacion: row.codigo_facturacion,
-    created_at: row.updated_at
-  };
-  });
-}
-
-r.get('/', (req, res) => {
-  const { clienteId, estado, periodo, tipo, q } = req.query;
-  let sql = `SELECT sf.*, c.nombre_corto as cliente_nombre, co.nombre as coordinador_nombre,
-      COALESCE((
-        SELECT SUM(COALESCE(sc.monto_uf, 0))
-        FROM solicitud_cp sc
-        WHERE sc.solicitud_id = sf.id
-      ), 0) as monto_uf
-    FROM solicitud_factura sf
-    JOIN cliente c ON c.id = sf.cliente_id
-    LEFT JOIN coordinador co ON co.id = sf.coordinador_id
-    WHERE sf.is_delete = 0
-      AND sf.empresa_emisora = ?`;
-  const vals = [EMPRESA_EMISORA_UNICA];
-  if (clienteId) { sql += ' AND sf.cliente_id = ?'; vals.push(clienteId); }
-  if (estado)    { sql += ' AND sf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
-  if (periodo)   { sql += ' AND sf.periodo = ?'; vals.push(periodo); }
-  if (tipo)      { sql += ' AND sf.tipo = ?'; vals.push(tipo); }
-  if (q)         { sql += ' AND (sf.folio LIKE ? OR sf.glosa LIKE ? OR c.nombre_corto LIKE ?)'; vals.push(`%${q}%`, `%${q}%`, `%${q}%`); }
-  sql += ' ORDER BY sf.created_at DESC LIMIT 200';
-  const reales = db.prepare(sql).all(...vals).map(aplicarCoordinadorSugerido);
-
-  ok(res, reales.sort((a, b) => {
-    const estadoA = estadoPrioridadSolicitud(a.estado);
-    const estadoB = estadoPrioridadSolicitud(b.estado);
-    return estadoA - estadoB || String(a.cliente_nombre || '').localeCompare(String(b.cliente_nombre || ''), 'es');
-  }));
-});
 
 function estadoPrioridadSolicitud(estado) {
   if (estado === 'PENDIENTE OC / HES') return 1;
@@ -415,279 +414,435 @@ function estadoPrioridadSolicitud(estado) {
   return 3;
 }
 
-r.post('/', (req, res) => {
-  const b = req.body;
-  b.empresa_emisora = b.empresa_emisora || EMPRESA_EMISORA_UNICA;
-  if (!b.cliente_id || !b.empresa_emisora || !b.periodo)
-    return fail(res, 'VALIDATION_ERROR', 'Faltan campos obligatorios: cliente_id, empresa_emisora, periodo');
-  if (!validarEmpresaEmisoraUnica(b.empresa_emisora))
-    return fail(res, 'VALIDATION_ERROR', 'Solo se permiten solicitudes de MAS CONSULTORES');
-  b.empresa_emisora = EMPRESA_EMISORA_UNICA;
-  if (b.coordinador_id && !coordinadorActivo(b.coordinador_id))
-    return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
-
-  const id = uuidv4();
-  const folio = generarFolio();
-  const itemsPayload = b.items || [];
-  const totals = itemsPayload.length
-    ? calcularTotales(itemsPayload, b.empresa_emisora, b.moneda_base, b.uf_valor)
-    : { items: [], ...calcularTotalesDesdeCPs(b.cps, b.empresa_emisora, b.uf_valor) };
-  const { items, monto_neto_clp, monto_iva_clp, monto_total_clp } = totals;
-  let cpsNormalizados = [];
+r.get('/', async (req, res, next) => {
   try {
-    cpsNormalizados = normalizarCPsDeCliente(b.cps, b.cliente_id, b.uf_valor);
-  } catch (e) {
-    return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+    const { clienteId, estado, periodo, tipo, q } = req.query;
+    let sql = `SELECT sf.*, c.nombre_corto as cliente_nombre, co.nombre as coordinador_nombre,
+        COALESCE((
+          SELECT SUM(COALESCE(sc.monto_uf, 0))
+          FROM solicitud_cp sc
+          WHERE sc.solicitud_id = sf.id
+        ), 0) as monto_uf
+      FROM solicitud_factura sf
+      JOIN cliente c ON c.id = sf.cliente_id
+      LEFT JOIN coordinador co ON co.id = sf.coordinador_id
+      WHERE sf.is_delete = 0`;
+    const vals = [];
+    sql = filtroEmpresasSolicitud(sql, vals);
+    sql = aplicarScope(sql, vals, req);
+    if (clienteId) { sql += ' AND sf.cliente_id = ?'; vals.push(clienteId); }
+    if (estado)    { sql += ' AND sf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
+    if (periodo)   { sql += ' AND sf.periodo = ?'; vals.push(periodo); }
+    if (tipo)      { sql += ' AND sf.tipo = ?'; vals.push(tipo); }
+    if (q)         { sql += ' AND (sf.folio LIKE ? OR sf.glosa LIKE ? OR c.nombre_corto LIKE ?)'; vals.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    sql += ' ORDER BY sf.created_at DESC LIMIT 200';
+    const reales = [];
+    for (const row of await db.all(sql, vals)) {
+      reales.push(await aplicarCoordinadorSugerido(row));
+    }
+
+    ok(res, reales.sort((a, b) => {
+      const estadoA = estadoPrioridadSolicitud(a.estado);
+      const estadoB = estadoPrioridadSolicitud(b.estado);
+      return estadoA - estadoB || String(a.cliente_nombre || '').localeCompare(String(b.cliente_nombre || ''), 'es');
+    }));
+  } catch (error) {
+    next(error);
   }
-  let estadoInicial;
-  const receptoresIniciales = receptoresPayloadODefecto(b.receptores, b.cliente_id);
-  const observacionesIniciales = observacionesConUF(b.observaciones, b.uf_fecha, b.uf_valor);
+});
+
+r.post('/', async (req, res, next) => {
   try {
-    estadoInicial = normalizarEstadoSolicitud(b.estado);
-    validarDatosPorEstado({ ...b, observaciones: observacionesIniciales, estado: estadoInicial, cps: b.cps || [], receptores: receptoresIniciales }, monto_neto_clp);
-  } catch (e) {
-    return fail(res, e.code || 'VALIDATION_ERROR', e.message);
-  }
+    const b = req.body || {};
+    const coordinatorId = coordinadorScope(req);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId) b.coordinador_id = coordinatorId;
+    b.empresa_emisora = empresaEmisoraSolicitud(b.empresa_emisora || EMPRESA_EMISORA_DEFAULT);
+    if (!b.cliente_id || !b.empresa_emisora || !b.periodo)
+      return fail(res, 'VALIDATION_ERROR', 'Faltan campos obligatorios: cliente_id, empresa_emisora, periodo');
+    if (!(await clienteActivo(b.cliente_id)))
+      return fail(res, 'VALIDATION_ERROR', 'Cliente no existe o esta inactivo');
+    if (coordinatorId && !(await clienteAsignadoAlCoordinador(b.cliente_id, coordinatorId)))
+      return fail(res, 'FORBIDDEN', 'El cliente no esta asignado a tu coordinador', null, 403);
+    if (!empresaEmisoraValida(b.empresa_emisora))
+      return fail(res, 'VALIDATION_ERROR', 'Facturar Por no es valido');
+    if (b.coordinador_id && !(await coordinadorActivo(b.coordinador_id)))
+      return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
 
-  const ins = db.transaction(() => {
-    db.prepare(`INSERT INTO solicitud_factura
-      (id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
-       oc_numero, contrato_numero, hes_numero, glosa, area, moneda_base, uf_fecha, uf_valor,
-       monto_neto_clp, monto_iva_clp, monto_total_clp, observaciones, estado, programada_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(id, folio, b.tipo||'mensual', b.cliente_id, b.coordinador_id||null, b.empresa_emisora,
-        b.periodo, b.fecha_solicitud||new Date().toISOString().slice(0,10),
-        b.oc_numero||null, b.contrato_numero||null, b.hes_numero||null,
-        b.glosa||'', b.area||null, b.moneda_base||'CLP', b.uf_fecha||null, b.uf_valor||null,
-        monto_neto_clp, monto_iva_clp, monto_total_clp, observacionesIniciales, estadoInicial, b.programada_id||null);
+    const id = uuidv4();
+    let clienteFacturacionId = null;
+    try {
+      clienteFacturacionId = await validarClienteFacturacion(b.cliente_id, b.cliente_facturacion_id);
+    } catch (e) {
+      return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+    }
+    const montoNetoManual = parseNumero(b.monto_neto_clp_manual);
+    const itemsPayload = b.items || [];
+    const totals = itemsPayload.length
+      ? await calcularTotales(itemsPayload, b.empresa_emisora, b.moneda_base, b.uf_valor)
+      : { items: [], ...(await calcularTotalesDesdeCPs(b.cps, b.empresa_emisora, b.uf_valor, montoNetoManual)) };
+    const { items, monto_neto_clp, monto_iva_clp, monto_total_clp } = totals;
+    let cpsNormalizados = [];
+    try {
+      cpsNormalizados = await normalizarCPsDeCliente(b.cps, b.cliente_id, b.uf_valor);
+    } catch (e) {
+      return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+    }
+    let estadoInicial;
+    let receptoresIniciales = [];
+    const observacionesIniciales = observacionesConUF(b.observaciones, b.uf_fecha, b.uf_valor);
+    try {
+      receptoresIniciales = await normalizarReceptoresDeCliente(b.receptores, b.cliente_id);
+      estadoInicial = normalizarEstadoSolicitud(b.estado);
+      validarDatosPorEstado({ ...b, observaciones: observacionesIniciales, estado: estadoInicial, cps: b.cps || [], receptores: receptoresIniciales }, monto_neto_clp);
+    } catch (e) {
+      return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+    }
 
-    (items || []).forEach((item, i) => {
-      db.prepare(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(uuidv4(), id, item.producto_id||null, item.descripcion||'', item.codigo_ref||null,
-          item.cantidad||1, item.uf_unitaria||null, item.clp_unitario||null, item.subtotal_clp||0, i);
+    const folio = await db.transaction(async tx => {
+      const nextFolio = await generarFolio(tx);
+      await tx.run(`INSERT INTO solicitud_factura
+        (id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
+         oc_numero, contrato_numero, hes_numero, glosa, area, moneda_base, uf_fecha, uf_valor,
+         monto_neto_clp, monto_iva_clp, monto_total_clp, monto_neto_clp_manual, cliente_facturacion_id, observaciones, estado, programada_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+        id, nextFolio, b.tipo || 'mensual', b.cliente_id, b.coordinador_id || null, b.empresa_emisora,
+        b.periodo, b.fecha_solicitud || new Date().toISOString().slice(0,10),
+        b.oc_numero || null, b.contrato_numero || null, b.hes_numero || null,
+        b.glosa || '', b.area || null, b.moneda_base || 'CLP', b.uf_fecha || null, b.uf_valor || null,
+        monto_neto_clp, monto_iva_clp, monto_total_clp, montoNetoManual, clienteFacturacionId, observacionesIniciales, estadoInicial, b.programada_id || null
+      ]);
+
+      for (const [i, item] of (items || []).entries()) {
+        await tx.run(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`, [
+          uuidv4(), id, item.producto_id || null, item.descripcion || '', item.codigo_ref || null,
+          item.cantidad || 1, item.uf_unitaria || null, item.clp_unitario || null, item.subtotal_clp || 0, i
+        ]);
+      }
+
+      for (const c of cpsNormalizados) {
+        await tx.run('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, monto_clp_manual, monto_clp_es_manual, orden) VALUES (?,?,?,?,?,?,?,?)', [
+          uuidv4(), id, c.cp_id, c.monto_uf, c.monto_clp, c.monto_clp_manual, c.monto_clp_es_manual, c.orden
+        ]);
+      }
+
+      await insertarReceptoresSolicitud(tx, id, receptoresIniciales);
+
+      await tx.run('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)', [
+        uuidv4(), id, null, estadoInicial, b._usuario || 'sistema', 'Solicitud creada'
+      ]);
+      return nextFolio;
     });
 
-    cpsNormalizados.forEach(c => {
-      db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?,?,?,?,?,?)')
-        .run(uuidv4(), id, c.cp_id, c.monto_uf, c.monto_clp, c.orden);
-    });
-
-    insertarReceptoresSolicitud(id, receptoresIniciales);
-
-    db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)')
-      .run(uuidv4(), id, null, estadoInicial, b._usuario||'sistema', 'Solicitud creada');
-  });
-  ins();
-  audit.log(req, 'crear', 'solicitud_factura', id, { folio, periodo: b.periodo, cliente_id: b.cliente_id });
-
-  ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(id)), 201);
+    audit.log(req, 'crear', 'solicitud_factura', id, { folio, periodo: b.periodo, cliente_id: b.cliente_id });
+    ok(res, await hydrateOne(await db.get('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0', [id])), 201);
+  } catch (error) {
+    next(error);
+  }
 });
 
 r.post('/proyecciones/:id/materializar', (req, res) => {
   return fail(res, 'PROYECCIONES_DISABLED', 'Las proyecciones no se utilizan en este proyecto', null, 410);
 });
 
-r.get('/:id', (req, res) => {
-  const row = db.prepare(`
-    SELECT * FROM solicitud_factura
-    WHERE (id = ? OR folio = ?)
-      AND is_delete = 0
-      AND empresa_emisora = ?
-  `).get(req.params.id, req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!row) return notFound(res);
-  ok(res, hydrateOne(row));
+r.get('/:id', async (req, res, next) => {
+  try {
+    const row = await db.get(`
+      SELECT * FROM solicitud_factura
+      WHERE (id = ? OR folio = ?)
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!row) return notFound(res);
+    if (!puedeVerSolicitud(req, row)) return notFound(res);
+    ok(res, await hydrateOne(row));
+  } catch (error) {
+    next(error);
+  }
 });
 
-r.patch('/:id', (req, res) => {
-  const sol = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!sol) return notFound(res);
-  if (!puedeEditar(sol.estado))
-    return fail(res, 'STATE_TRANSITION_INVALID', `No se puede editar una solicitud en estado "${sol.estado}"`);
+r.patch('/:id', async (req, res, next) => {
+  try {
+    const sol = await db.get(`
+      SELECT *
+      FROM solicitud_factura
+      WHERE id = ?
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!sol) return notFound(res);
+    if (!puedeVerSolicitud(req, sol)) return notFound(res);
+    if (!puedeEditar(sol.estado))
+      return fail(res, 'STATE_TRANSITION_INVALID', `No se puede editar una solicitud en estado "${sol.estado}"`);
 
-  const b = req.body;
-  if (b.empresa_emisora !== undefined && !validarEmpresaEmisoraUnica(b.empresa_emisora))
-    return fail(res, 'VALIDATION_ERROR', 'Solo se permiten solicitudes de MAS CONSULTORES');
-  if (b.empresa_emisora !== undefined) b.empresa_emisora = EMPRESA_EMISORA_UNICA;
-  if (b.coordinador_id && !coordinadorActivo(b.coordinador_id))
-    return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
-  const cpsParaTotales = b.cps !== undefined
-    ? b.cps
-    : db.prepare('SELECT monto_uf, monto_clp FROM solicitud_cp WHERE solicitud_id=?').all(sol.id);
-  const itemsParaTotales = b.items !== undefined
-    ? b.items
-    : (b.cps !== undefined ? [] : db.prepare('SELECT * FROM solicitud_item WHERE solicitud_id=?').all(sol.id));
-  const totals = itemsParaTotales.length
-    ? calcularTotales(
-      itemsParaTotales,
-      b.empresa_emisora || sol.empresa_emisora,
-      b.moneda_base || sol.moneda_base,
-      b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor
-    )
-    : { items: [], ...calcularTotalesDesdeCPs(cpsParaTotales, b.empresa_emisora || sol.empresa_emisora, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor) };
-  const { items, monto_neto_clp, monto_iva_clp, monto_total_clp } = totals;
-  let cpsNormalizados = [];
-  if (b.cps !== undefined) {
+    const b = req.body || {};
+    const coordinatorId = coordinadorScope(req);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId) {
+      if (b.coordinador_id !== undefined && b.coordinador_id !== coordinatorId) {
+        return fail(res, 'FORBIDDEN', 'Solo un admin puede cambiar el coordinador de una solicitud', null, 403);
+      }
+      b.coordinador_id = coordinatorId;
+    }
+    if (b.empresa_emisora !== undefined) {
+      b.empresa_emisora = empresaEmisoraSolicitud(b.empresa_emisora);
+      if (!b.empresa_emisora) return fail(res, 'VALIDATION_ERROR', 'Facturar Por no es valido');
+    }
+    if (b.coordinador_id && !(await coordinadorActivo(b.coordinador_id)))
+      return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
+    let clienteFacturacionId = sol.cliente_facturacion_id || null;
+    if (b.cliente_facturacion_id !== undefined) {
+      try {
+        clienteFacturacionId = await validarClienteFacturacion(sol.cliente_id, b.cliente_facturacion_id);
+      } catch (e) {
+        return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+      }
+    }
+    const cpsParaTotales = b.cps !== undefined
+      ? b.cps
+      : await db.all('SELECT monto_uf, monto_clp, monto_clp_manual, monto_clp_es_manual FROM solicitud_cp WHERE solicitud_id=?', [sol.id]);
+    const itemsParaTotales = b.items !== undefined
+      ? b.items
+      : (b.cps !== undefined ? [] : await db.all('SELECT * FROM solicitud_item WHERE solicitud_id=?', [sol.id]));
+    const montoNetoManual = b.monto_neto_clp_manual !== undefined
+      ? parseNumero(b.monto_neto_clp_manual)
+      : parseNumero(sol.monto_neto_clp_manual);
+    const totals = itemsParaTotales.length
+      ? await calcularTotales(
+        itemsParaTotales,
+        b.empresa_emisora || sol.empresa_emisora,
+        b.moneda_base || sol.moneda_base,
+        b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor
+      )
+      : { items: [], ...(await calcularTotalesDesdeCPs(cpsParaTotales, b.empresa_emisora || sol.empresa_emisora, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor, montoNetoManual)) };
+    const { items, monto_neto_clp, monto_iva_clp, monto_total_clp } = totals;
+    let cpsNormalizados = [];
+    if (b.cps !== undefined) {
+      try {
+        cpsNormalizados = await normalizarCPsDeCliente(b.cps, sol.cliente_id, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor);
+      } catch (e) {
+        return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+      }
+    }
+    let estadoNuevo;
+    if (b.estado !== undefined) {
+      try {
+        estadoNuevo = normalizarEstadoSolicitud(b.estado);
+      } catch (e) {
+        return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+      }
+    }
+    const estadoEfectivo = estadoNuevo !== undefined ? estadoNuevo : sol.estado;
+    let receptoresEfectivos = await db.all('SELECT receptor_id FROM solicitud_receptor WHERE solicitud_id=?', [sol.id]);
+    const cpsEfectivos = b.cps !== undefined ? b.cps : cpsParaTotales;
+    const ufFechaEfectiva = b.uf_fecha !== undefined ? b.uf_fecha : sol.uf_fecha;
+    const ufValorEfectivo = b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor;
+    const observacionesEfectivas = observacionesConUF(
+      b.observaciones !== undefined ? b.observaciones : sol.observaciones,
+      ufFechaEfectiva,
+      ufValorEfectivo
+    );
     try {
-      cpsNormalizados = normalizarCPsDeCliente(b.cps, sol.cliente_id, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor);
+      if (b.receptores !== undefined) {
+        receptoresEfectivos = await normalizarReceptoresDeCliente(b.receptores, sol.cliente_id);
+      }
+      validarDatosPorEstado({
+        ...sol,
+        ...b,
+        estado: estadoEfectivo,
+        coordinador_id: b.coordinador_id !== undefined ? b.coordinador_id : sol.coordinador_id,
+        glosa: b.glosa !== undefined ? b.glosa : sol.glosa,
+        observaciones: observacionesEfectivas,
+        hes_numero: b.hes_numero !== undefined ? b.hes_numero : sol.hes_numero,
+        oc_numero: b.oc_numero !== undefined ? b.oc_numero : sol.oc_numero,
+        contrato_numero: b.contrato_numero !== undefined ? b.contrato_numero : sol.contrato_numero,
+        uf_valor: ufValorEfectivo,
+        cps: cpsEfectivos,
+        receptores: receptoresEfectivos
+      }, monto_neto_clp);
     } catch (e) {
       return fail(res, e.code || 'VALIDATION_ERROR', e.message);
     }
+
+    await db.transaction(async tx => {
+      const fields = ['tipo','coordinador_id','empresa_emisora','periodo','fecha_solicitud','oc_numero',
+        'contrato_numero','hes_numero','glosa','area','moneda_base','uf_fecha','uf_valor'];
+      const sets = ['monto_neto_clp=?', 'monto_iva_clp=?', 'monto_total_clp=?', 'monto_neto_clp_manual=?', 'updated_at=?'];
+      const vals = [monto_neto_clp, monto_iva_clp, monto_total_clp, montoNetoManual, db.nowText()];
+      fields.forEach(f => { if (b[f] !== undefined) { sets.push(`${f}=?`); vals.push(b[f]); } });
+      if (b.observaciones !== undefined || b.uf_fecha !== undefined || b.uf_valor !== undefined) {
+        sets.push('observaciones=?');
+        vals.push(observacionesEfectivas);
+      }
+      if (estadoNuevo !== undefined) { sets.push('estado=?'); vals.push(estadoNuevo); }
+      if (b.cliente_facturacion_id !== undefined) { sets.push('cliente_facturacion_id=?'); vals.push(clienteFacturacionId); }
+      vals.push(req.params.id);
+      await tx.run(`UPDATE solicitud_factura SET ${sets.join(',')} WHERE id=?`, vals);
+
+      if (b.items !== undefined || b.cps !== undefined) {
+        await tx.run('DELETE FROM solicitud_item WHERE solicitud_id = ?', [req.params.id]);
+      }
+      if (b.items !== undefined) {
+        for (const [i, item] of items.entries()) {
+          await tx.run(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
+            VALUES (?,?,?,?,?,?,?,?,?,?)`, [
+            uuidv4(), req.params.id, item.producto_id || null, item.descripcion || '', item.codigo_ref || null,
+            item.cantidad || 1, item.uf_unitaria || null, item.clp_unitario || null, item.subtotal_clp || 0, i
+          ]);
+        }
+      }
+      if (b.cps !== undefined) {
+        await tx.run('DELETE FROM solicitud_cp WHERE solicitud_id = ?', [req.params.id]);
+        for (const c of cpsNormalizados) {
+          await tx.run('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, monto_clp_manual, monto_clp_es_manual, orden) VALUES (?,?,?,?,?,?,?,?)', [
+            uuidv4(), req.params.id, c.cp_id, c.monto_uf, c.monto_clp, c.monto_clp_manual, c.monto_clp_es_manual, c.orden
+          ]);
+        }
+      }
+      if (b.receptores !== undefined) {
+        await tx.run('DELETE FROM solicitud_receptor WHERE solicitud_id = ?', [req.params.id]);
+        await insertarReceptoresSolicitud(tx, req.params.id, receptoresEfectivos);
+      }
+      if (estadoNuevo !== undefined && estadoNuevo !== sol.estado) {
+        await tx.run('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)', [
+          uuidv4(), req.params.id, sol.estado, estadoNuevo, b._usuario || 'sistema', 'Estado actualizado desde formulario'
+        ]);
+      }
+    });
+
+    audit.log(req, 'editar', 'solicitud_factura', req.params.id, {
+      folio: sol.folio,
+      fields: Object.keys(b).filter(k => k !== '_usuario')
+    });
+
+    ok(res, await hydrateOne(await db.get('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0', [req.params.id])));
+  } catch (error) {
+    next(error);
   }
-  let estadoNuevo;
-  if (b.estado !== undefined) {
+});
+
+r.delete('/:id', async (req, res, next) => {
+  try {
+    const sol = await db.get(`
+      SELECT id, folio, coordinador_id
+      FROM solicitud_factura
+      WHERE id = ?
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!sol) return notFound(res);
+    if (!puedeVerSolicitud(req, sol)) return notFound(res);
+    await db.run('UPDATE solicitud_factura SET is_delete = 1, updated_at = ? WHERE id = ?', [db.nowText(), req.params.id]);
+    audit.log(req, 'eliminar', 'solicitud_factura', req.params.id, { folio: sol.folio });
+    ok(res, { id: sol.id, folio: sol.folio });
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.post('/:id/estado', async (req, res, next) => {
+  try {
+    const { hacia, comentario } = req.body || {};
+    if (!hacia) return fail(res, 'VALIDATION_ERROR', '"hacia" es requerido');
+    const row = await db.get(`
+      SELECT id, coordinador_id
+      FROM solicitud_factura
+      WHERE id = ?
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!row) return notFound(res);
+    if (!puedeVerSolicitud(req, row)) return notFound(res);
     try {
-      estadoNuevo = normalizarEstadoSolicitud(b.estado);
+      await cambiarEstado(req.params.id, hacia, req.body._usuario || 'usuario', comentario);
+      audit.log(req, 'cambiar_estado', 'solicitud_factura', req.params.id, { hacia, comentario });
+      ok(res, await hydrateOne(await db.get(`
+        SELECT *
+        FROM solicitud_factura
+        WHERE id = ?
+          AND is_delete = 0
+          AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+      `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD])));
     } catch (e) {
-      return fail(res, e.code || 'VALIDATION_ERROR', e.message);
+      fail(res, e.code || 'ERROR', e.message);
     }
+  } catch (error) {
+    next(error);
   }
-  const estadoEfectivo = estadoNuevo !== undefined ? estadoNuevo : sol.estado;
-  const receptoresEfectivos = b.receptores !== undefined
-    ? b.receptores
-    : db.prepare('SELECT receptor_id FROM solicitud_receptor WHERE solicitud_id=?').all(sol.id);
-  const cpsEfectivos = b.cps !== undefined ? b.cps : cpsParaTotales;
-  const ufFechaEfectiva = b.uf_fecha !== undefined ? b.uf_fecha : sol.uf_fecha;
-  const ufValorEfectivo = b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor;
-  const observacionesEfectivas = observacionesConUF(
-    b.observaciones !== undefined ? b.observaciones : sol.observaciones,
-    ufFechaEfectiva,
-    ufValorEfectivo
-  );
+});
+
+r.post('/:id/duplicar', async (req, res, next) => {
   try {
-    validarDatosPorEstado({
-      ...sol,
-      ...b,
-      estado: estadoEfectivo,
-      coordinador_id: b.coordinador_id !== undefined ? b.coordinador_id : sol.coordinador_id,
-      glosa: b.glosa !== undefined ? b.glosa : sol.glosa,
-      observaciones: observacionesEfectivas,
-      hes_numero: b.hes_numero !== undefined ? b.hes_numero : sol.hes_numero,
-      oc_numero: b.oc_numero !== undefined ? b.oc_numero : sol.oc_numero,
-      contrato_numero: b.contrato_numero !== undefined ? b.contrato_numero : sol.contrato_numero,
-      uf_valor: ufValorEfectivo,
-      cps: cpsEfectivos,
-      receptores: receptoresEfectivos
-    }, monto_neto_clp);
-  } catch (e) {
-    return fail(res, e.code || 'VALIDATION_ERROR', e.message);
-  }
+    const orig = await db.get(`
+      SELECT *
+      FROM solicitud_factura
+      WHERE id = ?
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!orig) return notFound(res);
+    if (!puedeVerSolicitud(req, orig)) return notFound(res);
+    const newId = uuidv4();
 
-  const fields = ['tipo','coordinador_id','empresa_emisora','periodo','fecha_solicitud','oc_numero',
-    'contrato_numero','hes_numero','glosa','area','moneda_base','uf_fecha','uf_valor'];
-  const sets = ["monto_neto_clp=?", "monto_iva_clp=?", "monto_total_clp=?", "updated_at=datetime('now')"];
-  const vals = [monto_neto_clp, monto_iva_clp, monto_total_clp];
-  fields.forEach(f => { if (b[f] !== undefined) { sets.push(`${f}=?`); vals.push(b[f]); } });
-  if (b.observaciones !== undefined || b.uf_fecha !== undefined || b.uf_valor !== undefined) {
-    sets.push('observaciones=?');
-    vals.push(observacionesEfectivas);
-  }
-  if (estadoNuevo !== undefined) { sets.push('estado=?'); vals.push(estadoNuevo); }
-  vals.push(req.params.id);
-  db.prepare(`UPDATE solicitud_factura SET ${sets.join(',')} WHERE id=?`).run(...vals);
-
-  if (b.items !== undefined || b.cps !== undefined) {
-    db.prepare('DELETE FROM solicitud_item WHERE solicitud_id = ?').run(req.params.id);
-  }
-  if (b.items !== undefined) {
-    items.forEach((item, i) => {
-      db.prepare(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(uuidv4(), req.params.id, item.producto_id||null, item.descripcion||'', item.codigo_ref||null,
-          item.cantidad||1, item.uf_unitaria||null, item.clp_unitario||null, item.subtotal_clp||0, i);
-    });
-  }
-  if (b.cps !== undefined) {
-    db.prepare('DELETE FROM solicitud_cp WHERE solicitud_id = ?').run(req.params.id);
-    cpsNormalizados.forEach(c => {
-      db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?,?,?,?,?,?)')
-        .run(uuidv4(), req.params.id, c.cp_id, c.monto_uf, c.monto_clp, c.orden);
-    });
-  }
-  if (b.receptores !== undefined) {
-    db.prepare('DELETE FROM solicitud_receptor WHERE solicitud_id = ?').run(req.params.id);
-    b.receptores.forEach(rec => {
-      const recId = rec.receptor_id || rec.id;
-      if (recId) db.prepare('INSERT OR IGNORE INTO solicitud_receptor (solicitud_id, receptor_id) VALUES (?,?)').run(req.params.id, recId);
-    });
-  }
-  if (estadoNuevo !== undefined && estadoNuevo !== sol.estado) {
-    db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)')
-      .run(uuidv4(), req.params.id, sol.estado, estadoNuevo, b._usuario||'sistema', 'Estado actualizado desde formulario');
-  }
-  audit.log(req, 'editar', 'solicitud_factura', req.params.id, {
-    folio: sol.folio,
-    fields: Object.keys(b).filter(k => k !== '_usuario')
-  });
-
-  ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(req.params.id)));
-});
-
-r.delete('/:id', (req, res) => {
-  const sol = db.prepare('SELECT id, folio FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!sol) return notFound(res);
-  db.prepare("UPDATE solicitud_factura SET is_delete = 1, updated_at = datetime('now') WHERE id = ?").run(req.params.id);
-  audit.log(req, 'eliminar', 'solicitud_factura', req.params.id, { folio: sol.folio });
-  ok(res, { id: sol.id, folio: sol.folio });
-});
-
-r.post('/:id/estado', (req, res) => {
-  const { hacia, comentario } = req.body;
-  if (!hacia) return fail(res, 'VALIDATION_ERROR', '"hacia" es requerido');
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!row) return notFound(res);
-  try {
-    cambiarEstado(req.params.id, hacia, req.body._usuario || 'usuario', comentario);
-    audit.log(req, 'cambiar_estado', 'solicitud_factura', req.params.id, { hacia, comentario });
-    ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA)));
-  } catch (e) {
-    fail(res, e.code || 'ERROR', e.message);
-  }
-});
-
-r.post('/:id/duplicar', (req, res) => {
-  const orig = db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!orig) return notFound(res);
-  const newId = uuidv4();
-  const newFolio = generarFolio();
-
-  const dup = db.transaction(() => {
-    db.prepare(`INSERT INTO solicitud_factura
-      (id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
-       oc_numero, contrato_numero, hes_numero, glosa, area, moneda_base, observaciones, estado, version_plantilla)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-      .run(newId, newFolio, orig.tipo, orig.cliente_id, orig.coordinador_id, orig.empresa_emisora,
+    const newFolio = await db.transaction(async tx => {
+      const nextFolio = await generarFolio(tx);
+      await tx.run(`INSERT INTO solicitud_factura
+        (id, folio, tipo, cliente_id, coordinador_id, empresa_emisora, periodo, fecha_solicitud,
+         oc_numero, contrato_numero, hes_numero, glosa, area, moneda_base, monto_neto_clp_manual, cliente_facturacion_id, observaciones, estado, version_plantilla)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+        newId, nextFolio, orig.tipo, orig.cliente_id, orig.coordinador_id, orig.empresa_emisora,
         orig.periodo, new Date().toISOString().slice(0,10),
         orig.oc_numero, orig.contrato_numero, orig.hes_numero, orig.glosa, orig.area,
-        orig.moneda_base, orig.observaciones, 'PENDIENTE OC / HES', orig.version_plantilla);
+        orig.moneda_base, orig.monto_neto_clp_manual, orig.cliente_facturacion_id, orig.observaciones, 'PENDIENTE OC / HES', orig.version_plantilla
+      ]);
 
-    db.prepare('SELECT * FROM solicitud_item WHERE solicitud_id = ?').all(orig.id).forEach(item => {
-      db.prepare(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(uuidv4(), newId, item.producto_id, item.descripcion, item.codigo_ref, item.cantidad, item.uf_unitaria, item.clp_unitario, item.subtotal_clp, item.orden);
+      const items = await tx.all('SELECT * FROM solicitud_item WHERE solicitud_id = ?', [orig.id]);
+      for (const item of items) {
+        await tx.run(`INSERT INTO solicitud_item (id, solicitud_id, producto_id, descripcion, codigo_ref, cantidad, uf_unitaria, clp_unitario, subtotal_clp, orden)
+          VALUES (?,?,?,?,?,?,?,?,?,?)`, [
+          uuidv4(), newId, item.producto_id, item.descripcion, item.codigo_ref, item.cantidad, item.uf_unitaria, item.clp_unitario, item.subtotal_clp, item.orden
+        ]);
+      }
+
+      const cps = await tx.all('SELECT * FROM solicitud_cp WHERE solicitud_id = ?', [orig.id]);
+      for (const cp of cps) {
+        await tx.run('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, monto_clp_manual, monto_clp_es_manual, orden) VALUES (?,?,?,?,?,?,?,?)', [
+          uuidv4(), newId, cp.cp_id, cp.monto_uf, cp.monto_clp, cp.monto_clp_manual, cp.monto_clp_es_manual || 0, cp.orden
+        ]);
+      }
+
+      const receptores = await tx.all('SELECT receptor_id FROM solicitud_receptor WHERE solicitud_id = ?', [orig.id]);
+      await insertarReceptoresSolicitud(tx, newId, receptores);
+
+      await tx.run('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)', [
+        uuidv4(), newId, null, 'PENDIENTE OC / HES', 'sistema', `Duplicada desde ${orig.folio}`
+      ]);
+      return nextFolio;
     });
 
-    db.prepare('SELECT * FROM solicitud_cp WHERE solicitud_id = ?').all(orig.id).forEach(cp => {
-      db.prepare('INSERT INTO solicitud_cp (id, solicitud_id, cp_id, monto_uf, monto_clp, orden) VALUES (?,?,?,?,?,?)').run(uuidv4(), newId, cp.cp_id, cp.monto_uf, cp.monto_clp, cp.orden);
-    });
-
-    db.prepare('SELECT receptor_id FROM solicitud_receptor WHERE solicitud_id = ?').all(orig.id).forEach(({ receptor_id }) => {
-      db.prepare('INSERT OR IGNORE INTO solicitud_receptor (solicitud_id, receptor_id) VALUES (?,?)').run(newId, receptor_id);
-    });
-
-    db.prepare('INSERT INTO historial_estado (id, solicitud_id, estado_desde, estado_hacia, usuario, comentario) VALUES (?,?,?,?,?,?)')
-      .run(uuidv4(), newId, null, 'PENDIENTE OC / HES', 'sistema', `Duplicada desde ${orig.folio}`);
-  });
-  dup();
-  audit.log(req, 'duplicar', 'solicitud_factura', newId, { desde: orig.id, folio_origen: orig.folio, folio: newFolio });
-
-  ok(res, hydrateOne(db.prepare('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0').get(newId)), 201);
+    audit.log(req, 'duplicar', 'solicitud_factura', newId, { desde: orig.id, folio_origen: orig.folio, folio: newFolio });
+    ok(res, await hydrateOne(await db.get('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0', [newId])), 201);
+  } catch (error) {
+    next(error);
+  }
 });
 
-r.get('/:id/historial', (req, res) => {
-  const row = db.prepare('SELECT id FROM solicitud_factura WHERE id = ? AND is_delete = 0 AND empresa_emisora = ?').get(req.params.id, EMPRESA_EMISORA_UNICA);
-  if (!row) return notFound(res);
-  ok(res, db.prepare('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC').all(req.params.id));
+r.get('/:id/historial', async (req, res, next) => {
+  try {
+    const row = await db.get(`
+      SELECT id, coordinador_id
+      FROM solicitud_factura
+      WHERE id = ?
+        AND is_delete = 0
+        AND empresa_emisora IN (${EMPRESAS_EMISORAS_SOLICITUD.map(() => '?').join(',')})
+    `, [req.params.id, ...EMPRESAS_EMISORAS_SOLICITUD]);
+    if (!row) return notFound(res);
+    if (!puedeVerSolicitud(req, row)) return notFound(res);
+    ok(res, await db.all('SELECT * FROM historial_estado WHERE solicitud_id = ? ORDER BY fecha DESC', [req.params.id]));
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = r;

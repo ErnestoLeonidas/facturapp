@@ -2,8 +2,13 @@ const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
 const fs = require('fs');
 const { runMigrations } = require('./migrations');
+const env = require('./config/env');
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'storage', 'facturapp.sqlite');
+if (process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL esta configurado, pero el runtime PostgreSQL aun no esta habilitado. Mantener SQLite sin DATABASE_URL o completar la fase de adaptacion DB asincrona.');
+}
+
+const DB_PATH = env.sqlitePath();
 const storageDir = path.dirname(DB_PATH);
 if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
 

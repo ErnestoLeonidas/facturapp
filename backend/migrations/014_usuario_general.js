@@ -8,6 +8,8 @@ function hashPassword(password, salt) {
 }
 
 module.exports = function migration(db) {
+  if (process.env.NODE_ENV === 'production') return;
+
   const username = 'usuario';
   const password = 'usuario2026';
   const salt = `facturapp-${username}-2026`;

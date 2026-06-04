@@ -46,6 +46,8 @@ module.exports = function migration(db) {
   addColumn(db, 'solicitud_factura', 'admin_batch_id', 'TEXT');
   addColumn(db, 'solicitud_factura', 'origen_admin', 'TEXT');
 
+  if (process.env.NODE_ENV === 'production') return;
+
   const upsertUser = db.prepare(`
     INSERT INTO app_user (id, nombre, email, rol, password_hash, password_salt, activo)
     VALUES (?, ?, ?, ?, ?, ?, 1)

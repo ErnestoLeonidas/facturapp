@@ -1,21 +1,32 @@
 const r = require('express').Router();
-const db = require('../db');
+const db = require('../db-async');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { upperName } = require('../db-normalize-names');
 
-function hydrate(row) {
-  if (!row) return null;
-  row.requiere_hes = !!row.requiere_hes;
-  row.receptores = db.prepare('SELECT * FROM receptor WHERE cliente_id = ? AND activo = 1 ORDER BY nombre').all(row.id);
-  row.cps = db.prepare('SELECT * FROM cp WHERE cliente_id = ? AND activo = 1 ORDER BY codigo').all(row.id);
-  if (row.coordinador_id) row.coordinador = db.prepare('SELECT id, nombre, email, slack_user_id FROM coordinador WHERE id = ?').get(row.coordinador_id);
-  row.coordinadores = coordinadoresCliente(row.id);
-  return row;
+async function datosFacturacionCliente(cliente) {
+  const original = {
+    id: '',
+    cliente_id: cliente.id,
+    etiqueta: 'Datos cliente 1',
+    razon_social: cliente.razon_social,
+    rut: cliente.rut,
+    giro: cliente.giro,
+    direccion: cliente.direccion,
+    es_original: 1
+  };
+  const extras = await db.all(`
+    SELECT id, cliente_id, etiqueta, razon_social, rut, giro, direccion, 0 AS es_original
+    FROM cliente_facturacion
+    WHERE cliente_id = ?
+      AND activo = 1
+    ORDER BY created_at, razon_social
+  `, [cliente.id]);
+  return [original, ...extras];
 }
 
-function coordinadoresCliente(clienteId) {
-  return db.prepare(`
+async function coordinadoresCliente(clienteId) {
+  return db.all(`
     SELECT
       cc.id,
       cc.cliente_id,
@@ -25,7 +36,7 @@ function coordinadoresCliente(clienteId) {
       co.nombre,
       co.email,
       cp.codigo AS cp_codigo,
-      cp.nombre AS cp_nombre
+      cp.nombre AS cp_nombre_catalogo
     FROM cliente_coordinador cc
     JOIN coordinador co ON co.id = cc.coordinador_id
     LEFT JOIN cp ON cp.id = cc.cp_id
@@ -33,114 +44,208 @@ function coordinadoresCliente(clienteId) {
       AND cc.activo = 1
       AND co.activo = 1
     ORDER BY cc.cp_nombre IS NOT NULL, cc.cp_nombre, lower(trim(co.nombre))
-  `).all(clienteId);
+  `, [clienteId]);
 }
 
-r.get('/', (req, res) => {
-  const { q, estado, frecuencia } = req.query;
-  let sql = 'SELECT c.*, co.nombre as coordinador_nombre FROM cliente c LEFT JOIN coordinador co ON co.id = c.coordinador_id WHERE 1=1';
-  const vals = [];
-  if (q) {
-    const like = `%${String(q).trim()}%`;
-    sql += ' AND (c.nombre_corto LIKE ? OR c.razon_social LIKE ? OR c.rut LIKE ? OR co.nombre LIKE ?)';
-    vals.push(like, like, like, like);
+async function hydrate(row) {
+  if (!row) return null;
+  row.requiere_hes = !!row.requiere_hes;
+  row.receptores = await db.all('SELECT * FROM receptor WHERE cliente_id = ? AND activo = 1 ORDER BY nombre', [row.id]);
+  row.cps = await db.all('SELECT * FROM cp WHERE cliente_id = ? AND activo = 1 ORDER BY codigo', [row.id]);
+  row.datos_facturacion = await datosFacturacionCliente(row);
+  if (row.coordinador_id) {
+    row.coordinador = await db.get('SELECT id, nombre, email, slack_user_id FROM coordinador WHERE id = ?', [row.coordinador_id]);
   }
-  if (estado)     { sql += ' AND c.estado = ?'; vals.push(estado); }
-  if (frecuencia) { sql += ' AND c.frecuencia = ?'; vals.push(frecuencia); }
-  sql += ' ORDER BY c.nombre_corto';
-  ok(res, db.prepare(sql).all(...vals));
-});
+  row.coordinadores = await coordinadoresCliente(row.id);
+  return row;
+}
 
-r.post('/', (req, res) => {
-  const { nombre_corto, razon_social, rut, giro, direccion, coordinador_id,
-    frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas } = req.body;
-  if (!nombre_corto) return fail(res, 'VALIDATION_ERROR', 'nombre_corto es requerido');
-  const id = uuidv4();
-  db.prepare(`INSERT INTO cliente (id, nombre_corto, razon_social, rut, giro, direccion, coordinador_id,
-    frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, upperName(nombre_corto), upperName(razon_social)||null, rut||null, giro||null, direccion||null, coordinador_id||null,
-      frecuencia||'Mensual', dia_facturacion||null, mes_inicio||null, requiere_hes ? 1 : 0, estado||'Activo', notas||null);
-  ok(res, hydrate(db.prepare('SELECT * FROM cliente WHERE id = ?').get(id)), 201);
-});
-
-r.get('/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  ok(res, hydrate(row));
-});
-
-r.patch('/:id', (req, res) => {
-  const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  const fields = ['nombre_corto','razon_social','rut','giro','direccion','coordinador_id',
-    'frecuencia','dia_facturacion','mes_inicio','requiere_hes','estado','notas'];
-  const sets = []; const vals = [];
-  fields.forEach(f => {
-    if (req.body[f] !== undefined) {
-      sets.push(`${f}=?`);
-      vals.push(f === 'requiere_hes'
-        ? (req.body[f] ? 1 : 0)
-        : ['nombre_corto', 'razon_social'].includes(f) ? upperName(req.body[f]) : req.body[f]);
+r.get('/', async (req, res, next) => {
+  try {
+    const { q, estado, frecuencia } = req.query;
+    let sql = 'SELECT c.*, co.nombre as coordinador_nombre FROM cliente c LEFT JOIN coordinador co ON co.id = c.coordinador_id WHERE 1=1';
+    const vals = [];
+    if (q) {
+      const like = `%${String(q).trim()}%`;
+      sql += ' AND (c.nombre_corto LIKE ? OR c.razon_social LIKE ? OR c.rut LIKE ? OR co.nombre LIKE ?)';
+      vals.push(like, like, like, like);
     }
-  });
-  if (sets.length) {
-    sets.push("updated_at=datetime('now')");
-    vals.push(req.params.id);
-    db.prepare(`UPDATE cliente SET ${sets.join(',')} WHERE id=?`).run(...vals);
+    if (estado)     { sql += ' AND c.estado = ?'; vals.push(estado); }
+    if (frecuencia) { sql += ' AND c.frecuencia = ?'; vals.push(frecuencia); }
+    sql += ' ORDER BY c.nombre_corto';
+    ok(res, await db.all(sql, vals));
+  } catch (error) {
+    next(error);
   }
-  ok(res, hydrate(db.prepare('SELECT * FROM cliente WHERE id = ?').get(req.params.id)));
 });
 
-r.delete('/:id', (req, res) => {
-  const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  db.prepare("UPDATE cliente SET estado='Inactivo', updated_at=datetime('now') WHERE id=?").run(req.params.id);
-  ok(res, { id: req.params.id, estado: 'Inactivo' });
-});
-
-r.get('/:id/productos', (req, res) => {
-  ok(res, db.prepare('SELECT p.* FROM producto p JOIN cliente_producto cp ON cp.producto_id=p.id WHERE cp.cliente_id=?').all(req.params.id));
-});
-
-r.get('/:id/coordinadores', (req, res) => {
-  const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  ok(res, coordinadoresCliente(req.params.id));
-});
-
-r.post('/:id/coordinadores', (req, res) => {
-  const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  const { coordinador_id, cp_id } = req.body;
-  const cpNombre = String(req.body.cp_nombre || '').trim() || null;
-  if (!coordinador_id) return fail(res, 'VALIDATION_ERROR', 'coordinador_id es requerido');
-  const coord = db.prepare('SELECT id FROM coordinador WHERE id = ? AND activo = 1').get(coordinador_id);
-  if (!coord) return fail(res, 'VALIDATION_ERROR', 'Coordinador no existe o esta inactivo');
-  if (cpNombre) {
-    const cp = db.prepare('SELECT id FROM cp WHERE cliente_id = ? AND nombre = ? AND activo = 1 LIMIT 1').get(req.params.id, cpNombre);
-    if (!cp) return fail(res, 'VALIDATION_ERROR', 'Nombre de CP no pertenece al cliente');
-  } else if (cp_id) {
-    const cp = db.prepare('SELECT nombre FROM cp WHERE id = ? AND cliente_id = ? AND activo = 1').get(cp_id, req.params.id);
-    if (!cp) return fail(res, 'VALIDATION_ERROR', 'CP no pertenece al cliente');
+r.post('/', async (req, res, next) => {
+  try {
+    const { nombre_corto, razon_social, rut, giro, direccion, coordinador_id,
+      frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas } = req.body;
+    if (!nombre_corto) return fail(res, 'VALIDATION_ERROR', 'nombre_corto es requerido');
+    const id = uuidv4();
+    await db.run(`INSERT INTO cliente (id, nombre_corto, razon_social, rut, giro, direccion, coordinador_id,
+      frecuencia, dia_facturacion, mes_inicio, requiere_hes, estado, notas) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
+      id,
+      upperName(nombre_corto),
+      upperName(razon_social) || null,
+      rut || null,
+      giro || null,
+      direccion || null,
+      coordinador_id || null,
+      frecuencia || 'Mensual',
+      dia_facturacion || null,
+      mes_inicio || null,
+      requiere_hes ? 1 : 0,
+      estado || 'Activo',
+      notas || null
+    ]);
+    ok(res, await hydrate(await db.get('SELECT * FROM cliente WHERE id = ?', [id])), 201);
+  } catch (error) {
+    next(error);
   }
-  const existing = cpNombre
-    ? db.prepare('SELECT id FROM cliente_coordinador WHERE cliente_id = ? AND coordinador_id = ? AND cp_nombre = ?').get(req.params.id, coordinador_id, cpNombre)
-    : db.prepare('SELECT id FROM cliente_coordinador WHERE cliente_id = ? AND coordinador_id = ? AND cp_nombre IS NULL').get(req.params.id, coordinador_id);
-  if (existing) {
-    db.prepare('UPDATE cliente_coordinador SET activo = 1 WHERE id = ?').run(existing.id);
-    return ok(res, coordinadoresCliente(req.params.id), 201);
-  }
-  const id = uuidv4();
-  db.prepare('INSERT INTO cliente_coordinador (id, cliente_id, coordinador_id, cp_id, cp_nombre) VALUES (?, ?, ?, ?, ?)')
-    .run(id, req.params.id, coordinador_id, null, cpNombre);
-  ok(res, coordinadoresCliente(req.params.id), 201);
 });
 
-r.delete('/:id/coordinadores/:asignacionId', (req, res) => {
-  const row = db.prepare('SELECT id FROM cliente WHERE id = ?').get(req.params.id);
-  if (!row) return notFound(res);
-  db.prepare('UPDATE cliente_coordinador SET activo = 0 WHERE id = ? AND cliente_id = ?').run(req.params.asignacionId, req.params.id);
-  ok(res, { id: req.params.asignacionId, activo: 0 });
+r.get('/:id', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT * FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    ok(res, await hydrate(row));
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.patch('/:id', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT id FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    const fields = ['nombre_corto','razon_social','rut','giro','direccion','coordinador_id',
+      'frecuencia','dia_facturacion','mes_inicio','requiere_hes','estado','notas'];
+    const sets = []; const vals = [];
+    fields.forEach(f => {
+      if (req.body[f] !== undefined) {
+        sets.push(`${f}=?`);
+        vals.push(f === 'requiere_hes'
+          ? (req.body[f] ? 1 : 0)
+          : ['nombre_corto', 'razon_social'].includes(f) ? upperName(req.body[f]) : req.body[f]);
+      }
+    });
+    if (sets.length) {
+      sets.push('updated_at=?');
+      vals.push(db.nowText());
+      vals.push(req.params.id);
+      await db.run(`UPDATE cliente SET ${sets.join(',')} WHERE id=?`, vals);
+    }
+    ok(res, await hydrate(await db.get('SELECT * FROM cliente WHERE id = ?', [req.params.id])));
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.delete('/:id', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT id FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    await db.run("UPDATE cliente SET estado='Inactivo', updated_at=? WHERE id=?", [db.nowText(), req.params.id]);
+    ok(res, { id: req.params.id, estado: 'Inactivo' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.get('/:id/productos', async (req, res, next) => {
+  try {
+    ok(res, await db.all('SELECT p.* FROM producto p JOIN cliente_producto cp ON cp.producto_id=p.id WHERE cp.cliente_id=?', [req.params.id]));
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.get('/:id/coordinadores', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT id FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    ok(res, await coordinadoresCliente(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.post('/:id/coordinadores', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT id FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    const { coordinador_id, cp_id } = req.body;
+    const cpNombre = String(req.body.cp_nombre || '').trim() || null;
+    if (!coordinador_id) return fail(res, 'VALIDATION_ERROR', 'coordinador_id es requerido');
+    const coord = await db.get('SELECT id FROM coordinador WHERE id = ? AND activo = 1', [coordinador_id]);
+    if (!coord) return fail(res, 'VALIDATION_ERROR', 'Coordinador no existe o esta inactivo');
+    if (cpNombre) {
+      const cp = await db.get('SELECT id FROM cp WHERE cliente_id = ? AND nombre = ? AND activo = 1 LIMIT 1', [req.params.id, cpNombre]);
+      if (!cp) return fail(res, 'VALIDATION_ERROR', 'Nombre de CP no pertenece al cliente');
+    } else if (cp_id) {
+      const cp = await db.get('SELECT nombre FROM cp WHERE id = ? AND cliente_id = ? AND activo = 1', [cp_id, req.params.id]);
+      if (!cp) return fail(res, 'VALIDATION_ERROR', 'CP no pertenece al cliente');
+    }
+    const existing = cpNombre
+      ? await db.get('SELECT id FROM cliente_coordinador WHERE cliente_id = ? AND coordinador_id = ? AND cp_nombre = ?', [req.params.id, coordinador_id, cpNombre])
+      : await db.get('SELECT id FROM cliente_coordinador WHERE cliente_id = ? AND coordinador_id = ? AND cp_nombre IS NULL', [req.params.id, coordinador_id]);
+    if (existing) {
+      await db.run('UPDATE cliente_coordinador SET activo = 1 WHERE id = ?', [existing.id]);
+      return ok(res, await coordinadoresCliente(req.params.id), 201);
+    }
+    const id = uuidv4();
+    await db.run('INSERT INTO cliente_coordinador (id, cliente_id, coordinador_id, cp_id, cp_nombre) VALUES (?, ?, ?, ?, ?)', [
+      id,
+      req.params.id,
+      coordinador_id,
+      null,
+      cpNombre
+    ]);
+    ok(res, await coordinadoresCliente(req.params.id), 201);
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.delete('/:id/coordinadores/:asignacionId', async (req, res, next) => {
+  try {
+    const row = await db.get('SELECT id FROM cliente WHERE id = ?', [req.params.id]);
+    if (!row) return notFound(res);
+    await db.run('UPDATE cliente_coordinador SET activo = 0 WHERE id = ? AND cliente_id = ?', [req.params.asignacionId, req.params.id]);
+    ok(res, { id: req.params.asignacionId, activo: 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+r.post('/:id/datos-facturacion', async (req, res, next) => {
+  try {
+    const cliente = await db.get('SELECT * FROM cliente WHERE id = ?', [req.params.id]);
+    if (!cliente) return notFound(res);
+    const { etiqueta, razon_social, rut, giro, direccion } = req.body;
+    if (!razon_social) return fail(res, 'VALIDATION_ERROR', 'razon_social es requerido');
+
+    const id = uuidv4();
+    await db.run(`
+      INSERT INTO cliente_facturacion
+        (id, cliente_id, etiqueta, razon_social, rut, giro, direccion)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [
+      id,
+      req.params.id,
+      etiqueta || null,
+      upperName(razon_social),
+      rut || null,
+      giro || null,
+      direccion || null
+    ]);
+    ok(res, await hydrate(await db.get('SELECT * FROM cliente WHERE id = ?', [req.params.id])), 201);
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = r;

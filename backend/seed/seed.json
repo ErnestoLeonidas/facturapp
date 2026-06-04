@@ -66,7 +66,6 @@
     { "nombre_corto": "Magotteaux",         "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
     { "nombre_corto": "Resiter",            "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
     { "nombre_corto": "Salmones Austral",   "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
-    { "nombre_corto": "Sigdo Koppers",      "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD" },
     { "nombre_corto": "Transelect",         "razon_social": "TBD", "rut": "TBD", "frecuencia": "TBD", "estado": "TBD", "requiere_hes": true }
   ]
 }

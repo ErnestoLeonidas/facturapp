@@ -17,9 +17,9 @@ window.ClientesView = {
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
               <th>Cliente</th><th>RUT</th>
-              <th>HES</th><th>Coordinador</th><th>Estado</th><th></th>
+              <th>Coordinador</th><th>Estado</th><th></th>
             </tr></thead>
-            <tbody id="tbl-clientes"><tr><td colspan="6" class="text-center py-4">
+            <tbody id="tbl-clientes"><tr><td colspan="5" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
@@ -46,12 +46,11 @@ window.ClientesView = {
       const q = String($('#cli-q').val() || '').trim();
       const params = q ? { q } : {};
       ClientesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="6" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="5" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-clientes').html(data.map(c => `
           <tr style="cursor:pointer" onclick="ClientesView.detalle_inline('${c.id}')">
             <td><strong>${c.nombre_corto}</strong>${c.razon_social ? '<br><small class="text-muted">'+c.razon_social+'</small>' : ''}</td>
             <td>${c.rut || '—'}</td>
-            <td>${c.requiere_hes ? '<span class="badge bg-warning text-dark">Sí</span>' : 'No'}</td>
             <td>${c.coordinador_nombre || '—'}</td>
             <td><span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></td>
             <td><a class="btn btn-sm btn-outline-secondary" href="#/clientes/${c.id}">Ver</a></td>
@@ -108,6 +107,26 @@ window.ClientesView = {
                 <p><strong>Coordinador base:</strong> ${c.coordinador?c.coordinador.nombre:'—'}</p>
                 <p><strong>Estado:</strong> <span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></p>
                 ${c.notas?`<p><strong>Notas:</strong> ${c.notas}</p>`:''}
+              </div>
+            </div>
+            <div class="card mt-3">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Datos de facturación</span>
+                <button class="btn btn-sm btn-outline-primary" id="btn-add-dato-fact">+ Datos</button>
+              </div>
+              <div class="list-group list-group-flush">
+                ${(c.datos_facturacion || []).map((dato, i) => `
+                  <div class="list-group-item">
+                    <div class="d-flex justify-content-between gap-2">
+                      <strong>${dato.etiqueta || `Datos cliente ${i + 1}`}</strong>
+                      ${dato.es_original ? '<span class="badge bg-secondary">Original</span>' : ''}
+                    </div>
+                    <div>${dato.razon_social || '—'}</div>
+                    <small class="text-muted d-block">${dato.rut || 'Sin RUT'}</small>
+                    <small class="text-muted d-block">${dato.giro || 'Sin giro'}</small>
+                    <small class="text-muted d-block">${dato.direccion || 'Sin dirección'}</small>
+                  </div>
+                `).join('') || '<div class="list-group-item text-muted">Sin datos de facturación</div>'}
               </div>
             </div>
           </div>
@@ -215,6 +234,7 @@ window.ClientesView = {
       });
 
       $('#btn-add-coord-cli').on('click', () => ClientesView._abrirModalCoordinadorCliente(params, c));
+      $('#btn-add-dato-fact').on('click', () => ClientesView._abrirModalDatoFacturacion(params, c));
 
       $('[data-delete-coord-cli]').on('click', function() {
         const asignacionId = $(this).data('delete-coord-cli');
@@ -287,6 +307,47 @@ window.ClientesView = {
         UI.toast('Coordinador asignado', 'success');
         ClientesView.detalle(params);
       }).fail(e => UI.toast(e.message || 'Error al asignar coordinador', 'danger'));
+    });
+    $modal.on('hidden.bs.modal', () => $modal.remove());
+  },
+
+  _abrirModalDatoFacturacion(params, cliente) {
+    const next = (cliente.datos_facturacion || []).length + 1;
+    const $modal = $(`<div class="modal fade" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content">
+      <div class="modal-header">
+        <h5>Agregar datos de facturación</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-4"><label class="form-label">Etiqueta</label><input class="form-control" name="fact_etiqueta" value="Datos cliente ${next}"></div>
+          <div class="col-md-8"><label class="form-label">Razón social *</label><input class="form-control" name="fact_razon_social"></div>
+          <div class="col-md-4"><label class="form-label">RUT</label><input class="form-control" name="fact_rut"></div>
+          <div class="col-md-8"><label class="form-label">Giro</label><input class="form-control" name="fact_giro"></div>
+          <div class="col-12"><label class="form-label">Dirección</label><input class="form-control" name="fact_direccion"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnSaveDatoFact">Guardar</button>
+      </div>
+    </div></div></div>`);
+    $('body').append($modal);
+    const modal = new bootstrap.Modal($modal[0]);
+    modal.show();
+    $modal.find('#btnSaveDatoFact').on('click', () => {
+      const payload = {
+        etiqueta: $modal.find('[name=fact_etiqueta]').val() || null,
+        razon_social: $modal.find('[name=fact_razon_social]').val(),
+        rut: $modal.find('[name=fact_rut]').val() || null,
+        giro: $modal.find('[name=fact_giro]').val() || null,
+        direccion: $modal.find('[name=fact_direccion]').val() || null
+      };
+      ClientesService.addDatosFacturacion(cliente.id, payload).then(() => {
+        modal.hide();
+        UI.toast('Datos de facturación agregados', 'success');
+        ClientesView.detalle(params);
+      }).fail(e => UI.toast(e.message || 'Error al guardar datos de facturación', 'danger'));
     });
     $modal.on('hidden.bs.modal', () => $modal.remove());
   },

@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const db = require('../db');
+const db = require('../db-async');
 
 const ITERATIONS = 120000;
 
@@ -7,14 +7,19 @@ function hashPassword(password, salt) {
   return crypto.pbkdf2Sync(String(password || ''), salt, ITERATIONS, 32, 'sha256').toString('hex');
 }
 
-function publicUser(user) {
+async function publicUser(user) {
   if (!user) return null;
+  const coordinador = user.coordinador_id
+    ? await db.get('SELECT id, nombre FROM coordinador WHERE id = ?', [user.coordinador_id])
+    : null;
   return {
     id: user.id,
     nombre: user.nombre,
     username: user.username || user.email,
     email: user.email,
-    rol: user.rol
+    rol: user.rol,
+    coordinador_id: user.coordinador_id || null,
+    coordinador_nombre: coordinador ? coordinador.nombre : null
   };
 }
 
@@ -24,17 +29,17 @@ function verifyPassword(user, password) {
   return crypto.timingSafeEqual(Buffer.from(attempted, 'hex'), Buffer.from(user.password_hash, 'hex'));
 }
 
-function createSession(userId) {
+async function createSession(userId) {
   const token = crypto.randomBytes(32).toString('hex');
-  db.prepare(`
+  await db.run(`
     INSERT INTO app_session (token, user_id, expires_at)
-    VALUES (?, ?, datetime('now', '+12 hours'))
-  `).run(token, userId);
+    VALUES (?, ?, ?)
+  `, [token, userId, db.addHoursText(12)]);
   return token;
 }
 
-function authenticate(identifier, password) {
-  const user = db.prepare(`
+async function authenticate(identifier, password) {
+  const user = await db.get(`
     SELECT *
     FROM app_user
     WHERE activo = 1
@@ -43,23 +48,23 @@ function authenticate(identifier, password) {
         OR lower(email) = lower(?)
       )
     LIMIT 1
-  `).get(identifier, identifier);
+  `, [identifier, identifier]);
   if (!verifyPassword(user, password)) return null;
-  const token = createSession(user.id);
-  return { token, user: publicUser(user) };
+  const token = await createSession(user.id);
+  return { token, user: await publicUser(user) };
 }
 
-function userFromToken(token) {
+async function userFromToken(token) {
   if (!token) return null;
-  const row = db.prepare(`
+  const row = await db.get(`
     SELECT u.*
     FROM app_session s
     JOIN app_user u ON u.id = s.user_id
     WHERE s.token = ?
       AND s.revoked_at IS NULL
       AND u.activo = 1
-      AND (s.expires_at IS NULL OR s.expires_at > datetime('now'))
-  `).get(token);
+      AND (s.expires_at IS NULL OR s.expires_at > ?)
+  `, [token, db.nowText()]);
   return row || null;
 }
 
@@ -69,9 +74,13 @@ function tokenFromReq(req) {
   return bearer ? bearer[1] : req.get('x-auth-token');
 }
 
-function attachUser(req, res, next) {
-  req.user = userFromToken(tokenFromReq(req));
-  next();
+async function attachUser(req, res, next) {
+  try {
+    req.user = await userFromToken(tokenFromReq(req));
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 function requireAuth(req, res, next) {
@@ -93,9 +102,9 @@ function requireRole(role) {
   };
 }
 
-function logout(token) {
+async function logout(token) {
   if (!token) return;
-  db.prepare("UPDATE app_session SET revoked_at = datetime('now') WHERE token = ?").run(token);
+  await db.run('UPDATE app_session SET revoked_at = ? WHERE token = ?', [db.nowText(), token]);
 }
 
 module.exports = {

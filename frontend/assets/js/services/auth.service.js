@@ -48,6 +48,7 @@ window.AuthService = {
   renderStatus() {
     const user = AuthService.user();
     $('#nav-admin').toggle(!!user && user.rol === 'admin');
+    $('#nav-coordinadores').toggle(!!user && user.rol === 'admin');
     $('#nav-proyecciones').toggle(!!user && user.rol === 'admin');
     $('#nav-configuracion').toggle(!!user && user.rol === 'admin');
     const label = AuthService._esc(user ? (user.username || user.nombre || 'Usuario') : '');

@@ -65,6 +65,16 @@ module.exports = function migration(db) {
       WHERE username IS NOT NULL AND username <> '';
   `);
 
+  if (process.env.NODE_ENV === 'production') {
+    db.prepare(`
+      UPDATE app_user
+      SET activo = 0,
+          updated_at = datetime('now')
+      WHERE lower(email) IN ('admin@facturapp.local', 'usuario@facturapp.local')
+    `).run();
+    return;
+  }
+
   ensureUser(db, {
     nombre: 'Administrador Valgian',
     username: 'valgian',

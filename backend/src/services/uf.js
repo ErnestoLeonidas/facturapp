@@ -1,5 +1,5 @@
 const axios = require('axios');
-const db = require('../db');
+const db = require('../db-async');
 
 const BASE = process.env.UF_API_BASE || 'https://mindicador.cl/api/uf';
 const SII_BASE = process.env.UF_SII_BASE || 'https://www.sii.cl/valores_y_fechas/uf';
@@ -21,7 +21,7 @@ const MESES_SII = {
 };
 
 async function getUF(fecha) {
-  const cached = db.prepare('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
+  const cached = await db.get('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?', [fecha]);
   if (cached) {
     return {
       fecha,
@@ -36,7 +36,7 @@ async function getUF(fecha) {
   if (Number.isInteger(anio) && anio >= CACHE_FROM_YEAR) {
     try {
       await cacheUFYear(anio, fecha);
-      const saved = db.prepare('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
+      const saved = await db.get('SELECT valor, source, obtenido_at FROM uf_cache WHERE fecha = ?', [fecha]);
       if (saved) {
         return {
           fecha,
@@ -70,8 +70,16 @@ async function getUF(fecha) {
 
   if (valor == null) throw Object.assign(new Error('UF no disponible para ' + fecha), { code: 'UF_UNAVAILABLE' });
 
-  db.prepare("INSERT OR REPLACE INTO uf_cache (fecha, valor, source) VALUES (?, ?, 'mindicador.cl')").run(fecha, valor);
-  const saved = db.prepare('SELECT obtenido_at FROM uf_cache WHERE fecha = ?').get(fecha);
+  const obtenidoAt = db.nowText();
+  await db.run(`
+    INSERT INTO uf_cache (fecha, valor, source, obtenido_at)
+    VALUES (?, ?, 'mindicador.cl', ?)
+    ON CONFLICT(fecha) DO UPDATE SET
+      valor = excluded.valor,
+      source = excluded.source,
+      obtenido_at = excluded.obtenido_at
+  `, [fecha, valor, obtenidoAt]);
+  const saved = await db.get('SELECT obtenido_at FROM uf_cache WHERE fecha = ?', [fecha]);
   return { fecha, valor, updated_at: saved && saved.obtenido_at, cached: false, source: 'mindicador.cl' };
 }
 
@@ -201,28 +209,32 @@ async function fetchUFYear(anio) {
   }
 }
 
-function saveUFCacheRows(rows) {
+async function saveUFCacheRows(rows) {
   if (!rows.length) return 0;
 
-  const insert = db.prepare(`
-    INSERT OR REPLACE INTO uf_cache (fecha, valor, source)
-    VALUES (?, ?, ?)
-  `);
-  const save = db.transaction((items) => {
-    for (const item of items) insert.run(item.fecha, item.valor, item.source || 'sii.cl');
+  await db.transaction(async tx => {
+    for (const item of rows) {
+      await tx.run(`
+        INSERT INTO uf_cache (fecha, valor, source, obtenido_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(fecha) DO UPDATE SET
+          valor = excluded.valor,
+          source = excluded.source,
+          obtenido_at = excluded.obtenido_at
+      `, [item.fecha, item.valor, item.source || 'sii.cl', db.nowText()]);
+    }
   });
 
-  save(rows);
   return rows.length;
 }
 
-function getCachedRange(inicio, fin) {
-  return db.prepare(`
+async function getCachedRange(inicio, fin) {
+  return db.all(`
     SELECT fecha, valor, obtenido_at
     FROM uf_cache
     WHERE fecha BETWEEN ? AND ?
     ORDER BY fecha
-  `).all(inicio, fin);
+  `, [inicio, fin]);
 }
 
 async function cacheUFYear(anio, hastaFecha) {
@@ -240,7 +252,7 @@ async function cacheUFYear(anio, hastaFecha) {
 async function ensureUFCacheRange(inicio, fin) {
   if (!inicio || !fin || inicio > fin) return { saved: 0, cached: true };
 
-  const cached = getCachedRange(inicio, fin);
+  const cached = await getCachedRange(inicio, fin);
   const expectedDays = Math.floor((new Date(fin + 'T00:00:00') - new Date(inicio + 'T00:00:00')) / 86400000) + 1;
   if (cached.length >= expectedDays) return { saved: 0, cached: true };
 
@@ -267,7 +279,7 @@ async function getHistorialUF(anio, mes) {
     }
   }
 
-  const cachedRows = getCachedRange(inicio, fin);
+  const cachedRows = await getCachedRange(inicio, fin);
   const cachedByFecha = new Map(cachedRows.map(row => [row.fecha, row]));
   const valores = [];
   const errores = [];

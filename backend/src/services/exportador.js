@@ -1,5 +1,5 @@
 const ExcelJS = require('exceljs');
-const db = require('../db');
+const db = require('../db-async');
 const path = require('path');
 const { getUF } = require('./uf');
 
@@ -48,6 +48,20 @@ function esHabitat(cliente) {
     .includes('HABITAT');
 }
 
+async function datosFacturacionSolicitud(sf, cliente) {
+  if (sf.cliente_facturacion_id) {
+    const dato = await db.get(`
+      SELECT razon_social, rut, giro, direccion
+      FROM cliente_facturacion
+      WHERE id = ?
+        AND cliente_id = ?
+        AND activo = 1
+    `, [sf.cliente_facturacion_id, sf.cliente_id]);
+    if (dato) return dato;
+  }
+  return cliente || {};
+}
+
 function copyRowStyle(sourceRow, targetRow) {
   targetRow.height = sourceRow.height;
   sourceRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
@@ -61,6 +75,24 @@ function copyRowStyle(sourceRow, targetRow) {
   });
 }
 
+function deleteRowPreservingMerges(ws, rowNumber) {
+  const merges = [...(ws.model.merges || [])];
+  merges.forEach(range => {
+    try { ws.unMergeCells(range); } catch (_) {}
+  });
+  ws.spliceRows(rowNumber, 1);
+  const shiftRow = row => (row > rowNumber ? row - 1 : row);
+  merges.forEach(range => {
+    const match = /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(range);
+    if (!match) return;
+    const startRow = Number(match[2]);
+    const endRow = Number(match[4]);
+    if (startRow === rowNumber && endRow === rowNumber) return;
+    if (startRow <= rowNumber && endRow >= rowNumber) return;
+    ws.mergeCells(`${match[1]}${shiftRow(startRow)}:${match[3]}${shiftRow(endRow)}`);
+  });
+}
+
 function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -71,6 +103,9 @@ function fechaSolicitudExportacion(sf) {
 }
 
 function cpMontoClp(cp, ufValor) {
+  if (cp.monto_clp_es_manual && cp.monto_clp_manual !== null && cp.monto_clp_manual !== undefined) {
+    return Math.round(Number(cp.monto_clp_manual) || 0);
+  }
   const montoUF = Number(cp.monto_uf);
   if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * Number(ufValor));
   return Math.round(Number(cp.monto_clp) || 0);
@@ -85,6 +120,7 @@ function numeroFormula(valor) {
 }
 
 function formulaNetoUF(cps, ufValor) {
+  if (cps.some(cp => cp.monto_clp_es_manual)) return null;
   const totalUF = cps.reduce((sum, cp) => sum + (Number(cp.monto_uf) || 0), 0);
   if (!totalUF || !ufValor) return null;
   return `${numeroFormula(totalUF)}*${numeroFormula(ufValor)}`;
@@ -102,21 +138,24 @@ async function recalcularMontosParaExportacion(sf, cps, empresa) {
     ufValor = uf.valor;
   }
 
-  const montoNeto = cps.reduce((sum, cp) => sum + cpMontoClp(cp, ufValor), 0);
+  const montoNetoAutomatico = cps.reduce((sum, cp) => sum + cpMontoClp(cp, ufValor), 0);
+  const montoNetoManual = sf.monto_neto_clp_manual !== null && sf.monto_neto_clp_manual !== undefined
+    ? Math.round(Number(sf.monto_neto_clp_manual) || 0)
+    : null;
+  const montoNeto = montoNetoManual !== null ? montoNetoManual : montoNetoAutomatico;
   const ivaPct = (empresa && empresa.iva_pct) || 0.19;
   const montoIva = empresa && empresa.afecto_iva ? redondearIvaCLP(montoNeto * ivaPct) : 0;
   const montoTotal = montoNeto + montoIva;
 
   if (usaUF) {
-    cps.forEach(cp => {
+    for (const cp of cps) {
       const montoClp = cpMontoClp(cp, ufValor);
       cp.monto_clp = montoClp;
-      db.prepare('UPDATE solicitud_cp SET monto_clp=? WHERE id=?').run(montoClp, cp.id);
-    });
-    db.prepare(`UPDATE solicitud_factura
-      SET moneda_base='UF', uf_fecha=?, uf_valor=?, monto_neto_clp=?, monto_iva_clp=?, monto_total_clp=?, updated_at=datetime('now')
-      WHERE id=?`)
-      .run(ufFecha, ufValor, montoNeto, montoIva, montoTotal, sf.id);
+      await db.run('UPDATE solicitud_cp SET monto_clp = ? WHERE id = ?', [montoClp, cp.id]);
+    }
+    await db.run(`UPDATE solicitud_factura
+      SET moneda_base = 'UF', uf_fecha = ?, uf_valor = ?, monto_neto_clp = ?, monto_iva_clp = ?, monto_total_clp = ?, updated_at = ?
+      WHERE id = ?`, [ufFecha, ufValor, montoNeto, montoIva, montoTotal, db.nowText(), sf.id]);
     sf.moneda_base = 'UF';
     sf.uf_fecha = ufFecha;
     sf.uf_valor = ufValor;
@@ -125,29 +164,30 @@ async function recalcularMontosParaExportacion(sf, cps, empresa) {
     sf.monto_total_clp = montoTotal;
   }
 
-  return { ufFecha, ufValor, montoNeto, montoIva, montoTotal };
+  return { ufFecha, ufValor, montoNeto, montoNetoManual, montoIva, montoTotal };
 }
 
 async function generarSolicitudXLSX(solicitudId) {
-  const sf = db.prepare('SELECT * FROM solicitud_factura WHERE id=? AND is_delete = 0').get(solicitudId);
+  const sf = await db.get('SELECT * FROM solicitud_factura WHERE id = ? AND is_delete = 0', [solicitudId]);
   if (!sf) throw new Error('Solicitud no encontrada');
 
-  const cliente = db.prepare('SELECT * FROM cliente WHERE id=?').get(sf.cliente_id);
-  const empresa = db.prepare('SELECT * FROM empresa_emisora WHERE codigo=?').get(sf.empresa_emisora);
-  const coordinador = sf.coordinador_id ? db.prepare('SELECT nombre FROM coordinador WHERE id=?').get(sf.coordinador_id) : null;
-  const cps = db.prepare(`
+  const cliente = await db.get('SELECT * FROM cliente WHERE id = ?', [sf.cliente_id]);
+  const datosFacturacion = await datosFacturacionSolicitud(sf, cliente);
+  const empresa = await db.get('SELECT * FROM empresa_emisora WHERE codigo = ?', [sf.empresa_emisora]);
+  const coordinador = sf.coordinador_id ? await db.get('SELECT nombre FROM coordinador WHERE id = ?', [sf.coordinador_id]) : null;
+  const cps = await db.all(`
     SELECT sc.*, cp.codigo, cp.nombre as cp_nombre
     FROM solicitud_cp sc
     JOIN cp ON cp.id=sc.cp_id
     WHERE sc.solicitud_id=?
     ORDER BY sc.orden
-  `).all(solicitudId);
-  const receptores = db.prepare(`
+  `, [solicitudId]);
+  const receptores = await db.all(`
     SELECT r.*
     FROM receptor r
     JOIN solicitud_receptor sr ON sr.receptor_id=r.id
     WHERE sr.solicitud_id=?
-  `).all(solicitudId);
+  `, [solicitudId]);
   const montos = await recalcularMontosParaExportacion(sf, cps, empresa);
 
   const wb = new ExcelJS.Workbook();
@@ -170,10 +210,10 @@ async function generarSolicitudXLSX(solicitudId) {
 
   setValue(ws, 'C4', empresa ? empresa.razon_social : sf.empresa_emisora);
   setValue(ws, 'C5', cliente ? cliente.nombre_corto : '');
-  setValue(ws, 'C8', cliente ? cliente.razon_social || '' : '');
-  setValue(ws, 'C9', cliente ? cliente.rut || '' : '');
-  setValue(ws, 'C10', cliente ? cliente.giro || '' : '');
-  setValue(ws, 'C11', cliente ? cliente.direccion || '' : '');
+  setValue(ws, 'C8', datosFacturacion ? datosFacturacion.razon_social || '' : '');
+  setValue(ws, 'C9', datosFacturacion ? datosFacturacion.rut || '' : '');
+  setValue(ws, 'C10', datosFacturacion ? datosFacturacion.giro || '' : '');
+  setValue(ws, 'C11', datosFacturacion ? datosFacturacion.direccion || '' : '');
   if (esHabitat(cliente)) {
     setValue(ws, 'B12', 'N° Contrato');
     setValue(ws, 'C12', sf.contrato_numero || sf.oc_numero || '');
@@ -183,7 +223,7 @@ async function generarSolicitudXLSX(solicitudId) {
   }
   setValue(ws, 'C13', sf.hes_numero || 'N/A');
   setValue(ws, 'C14', sf.glosa);
-  const netoFormula = formulaNetoUF(cps, montos.ufValor);
+  const netoFormula = montos.montoNetoManual === null ? formulaNetoUF(cps, montos.ufValor) : null;
   setValue(ws, 'C15', netoFormula ? { formula: netoFormula, result: montos.montoNeto } : montos.montoNeto);
   setValue(ws, 'C16', montos.montoIva);
   setValue(ws, 'C17', montos.montoTotal);
@@ -206,6 +246,7 @@ async function generarSolicitudXLSX(solicitudId) {
   setValue(ws, `C${rowArea}`, sf.area || '');
   setValue(ws, `C${rowEncargado}`, coordinador ? coordinador.nombre : '');
   setValue(ws, `C${rowObservaciones}`, observacionesSolicitud(sf));
+  deleteRowPreservingMerges(ws, 6);
 
   return wb.xlsx.writeBuffer();
 }

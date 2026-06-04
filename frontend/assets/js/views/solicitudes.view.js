@@ -2,11 +2,12 @@ window.SolicitudesView = {
   list() {
     UI.setTitle('Solicitudes');
     const periodoActual = SolicitudesView._periodoActual();
+    const [anioActual, mesActual] = periodoActual.split('-');
     $('#view-root').html(`
       <div class="card mb-3"><div class="card-body py-2">
         <form class="row g-2" id="form-filtros">
           <div class="col-md-3"><input class="form-control form-control-sm" name="q" placeholder="Cliente, glosa…"></div>
-          <div class="col-md-3">
+          <div class="col-md-2">
             <select class="form-select form-select-sm" name="clienteId" id="filtro-cliente">
               <option value="">Cliente</option>
             </select>
@@ -17,7 +18,16 @@ window.SolicitudesView = {
               ${(AppConfig.estadosProyecciones || []).map(e=>`<option>${e}</option>`).join('')}
             </select>
           </div>
-          <div class="col-md-2"><input class="form-control form-control-sm" name="periodo" value="${periodoActual}" placeholder="2026-05"></div>
+          <div class="col-md-2">
+            <select class="form-select form-select-sm" name="mes">
+              ${SolicitudesView._meses.map((nombre, i) => `<option value="${String(i + 1).padStart(2, '0')}" ${String(i + 1).padStart(2, '0') === mesActual ? 'selected' : ''}>${nombre}</option>`).join('')}
+            </select>
+          </div>
+          <div class="col-md-1">
+            <select class="form-select form-select-sm" name="anio">
+              <option value="2026" ${anioActual === '2026' ? 'selected' : ''}>2026</option>
+            </select>
+          </div>
           <div class="col-md-2 d-flex gap-1">
             <button class="btn btn-sm btn-outline-primary flex-grow-1" type="submit">Filtrar</button>
           </div>
@@ -47,7 +57,7 @@ window.SolicitudesView = {
       SolicitudesService.list(params).then(data => {
         if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="9" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
         $('#tbl-solicitudes').html(data.map(s => {
-          const empresa = 'Consultores';
+          const empresa = SolicitudesView._empresaNombre(s.empresa_emisora || (s.empresa && s.empresa.codigo));
           return `<tr style="cursor:pointer" data-solicitud-id="${s.id}">
             <td>${s.cliente_nombre||''}</td>
             <td>${s.periodo}</td>
@@ -76,6 +86,9 @@ window.SolicitudesView = {
     $('#form-filtros').on('submit', e => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target).entries());
+      if (d.anio && d.mes) d.periodo = `${d.anio}-${d.mes}`;
+      delete d.anio;
+      delete d.mes;
       Object.keys(d).forEach(k => !d[k] && delete d[k]);
       if (!d.periodo) d.periodo = periodoActual;
       cargar(d);
@@ -108,10 +121,18 @@ window.SolicitudesView = {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   },
 
+  _meses: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
+
   _formatUFLista(valor) {
     const uf = Number(valor) || 0;
     if (!uf) return '0';
     return uf.toLocaleString('es-CL', { maximumFractionDigits: 2 });
+  },
+
+  _empresaNombre(codigo) {
+    const empresa = (AppConfig.empresasEmisoras || []).find(e => e.codigo === codigo);
+    if (!empresa) return codigo || '';
+    return empresa.nombre || empresa.razon_social || empresa.codigo;
   },
 
   _hoyISO() {
@@ -137,14 +158,19 @@ window.SolicitudesView = {
     const readonly = sol && !['PENDIENTE OC / HES','FACTURA SOLICITADA','Borrador','PendienteDatos'].includes(SolicitudesView._estadoSolicitudVisible(sol.estado));
     UI.setTitle(isNew ? 'Nueva solicitud' : 'Solicitudes');
 
-    const empresaOpts = AppConfig.empresasEmisoras.map(e =>
-      `<option value="${e.codigo}" ${(prefill.empresa_emisora||'MAS_CONSULTORES')===e.codigo?'selected':''}>${e.nombre}</option>`).join('');
     const estadoActual = SolicitudesView._estadoSolicitudVisible(prefill.estado || 'PENDIENTE OC / HES');
     const cpEditable = !readonly || SolicitudesView._esPendienteOcHes(estadoActual);
     const estadoOpts = (AppConfig.estadosProyecciones || AppConfig.estadosSolicitud).map(e =>
       `<option value="${e}" ${estadoActual===e?'selected':''}>${e}</option>`).join('');
     const ufFecha = prefill.uf_fecha || SolicitudesView._hoyISO();
     const areaPlataforma = /plataforma/i.test(prefill.area || '');
+    const hesValor = prefill.hes_numero || 'N/A';
+    const tieneHes = String(hesValor || '').trim().toUpperCase() !== 'N/A';
+    const netoManual = prefill.monto_neto_clp_manual !== null && prefill.monto_neto_clp_manual !== undefined && prefill.monto_neto_clp_manual !== '';
+    const empresaActual = prefill.empresa_emisora || 'MAS_CONSULTORES';
+    const empresaOpts = (AppConfig.empresasEmisoras || []).map(e =>
+      `<option value="${e.codigo}" ${empresaActual === e.codigo ? 'selected' : ''}>${e.nombre}</option>`
+    ).join('');
 
     $('#view-root').html(`
       <div class="row g-3">
@@ -155,10 +181,6 @@ window.SolicitudesView = {
             </div>
             <div class="card-body">
               <div class="row g-3">
-                <div class="col-md-6">
-                  <label class="form-label">Facturar Por *</label>
-                  <select class="form-select" name="empresa_emisora" ${readonly?'disabled':''}>${empresaOpts}</select>
-                </div>
                 <div class="col-md-3">
                   <label class="form-label">Período *</label>
                   <input class="form-control" name="periodo" placeholder="2026-05" value="${prefill.periodo||''}" ${readonly?'readonly':''}>
@@ -175,9 +197,16 @@ window.SolicitudesView = {
                     <option value="">— seleccionar —</option>
                   </select>
                 </div>
+                <div class="col-md-6">
+                  <label class="form-label">Razón social *</label>
+                  <select class="form-select" name="cliente_facturacion_id" id="sel-cliente-facturacion" ${readonly?'disabled':''}>
+                    <option value="">Datos cliente 1</option>
+                  </select>
+                  <small class="text-muted d-block mt-1" id="cliente-facturacion-preview"></small>
+                </div>
                 <div class="col-md-3">
                   <label class="form-label">Encargado de Solicitud *</label>
-                  <select class="form-select" name="coordinador_id" id="sel-coordinador" ${readonly?'disabled':''}>
+                  <select class="form-select" name="coordinador_id" id="sel-coordinador" data-readonly="${readonly ? '1' : '0'}" ${readonly?'disabled':''}>
                     <option value="">seleccionar</option>
                   </select>
                 </div>
@@ -190,8 +219,14 @@ window.SolicitudesView = {
                   <input class="form-control" name="contrato_numero" value="${prefill.contrato_numero||''}" ${readonly?'readonly':''}>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label">HES</label>
-                  <input class="form-control" name="hes_numero" placeholder="N/A" value="${prefill.hes_numero||''}" ${readonly?'readonly':''}>
+                  <div class="d-flex justify-content-between align-items-center">
+                    <label class="form-label mb-0" for="hes-numero">HES</label>
+                    <div class="form-check form-check-sm">
+                      <input class="form-check-input" type="checkbox" id="hes-tiene" name="hes_tiene" ${tieneHes?'checked':''} ${readonly?'disabled':''}>
+                      <label class="form-check-label small" for="hes-tiene">Lleva</label>
+                    </div>
+                  </div>
+                  <input class="form-control" id="hes-numero" name="hes_numero" placeholder="N/A" value="${tieneHes ? hesValor : 'N/A'}" ${(!tieneHes || readonly)?'readonly':''}>
                 </div>
 
                 <div class="col-12">
@@ -255,6 +290,12 @@ window.SolicitudesView = {
             <div class="card-header">Resumen</div>
             <div class="card-body">
               <div class="row g-2 mb-3">
+                <div class="col-12">
+                  <label class="form-label small">Facturar Por</label>
+                  <select class="form-select form-select-sm" name="empresa_emisora" ${readonly?'disabled':''}>
+                    ${empresaOpts}
+                  </select>
+                </div>
                 <div class="col-6">
                   <label class="form-label small">Moneda</label>
                   <select class="form-select form-select-sm" name="moneda_base" ${readonly?'disabled':''}>
@@ -275,10 +316,23 @@ window.SolicitudesView = {
                 </div>
               </div>
               <hr>
-              <table class="table table-sm mb-3">
-                <tr><td>Neto</td><td class="text-end fw-bold" id="resumen-neto">${Format.clp(prefill.monto_neto_clp||0)}</td></tr>
-                <tr><td>IVA</td><td class="text-end" id="resumen-iva">${Format.clp(prefill.monto_iva_clp||0)}</td></tr>
-                <tr class="table-active"><td>Total</td><td class="text-end fw-bold" id="resumen-total">${Format.clp(prefill.monto_total_clp||0)}</td></tr>
+              <table class="table table-sm mb-3 resumen-table">
+                <tr>
+                  <td class="align-middle">
+                    <div class="d-flex align-items-center gap-2">
+                      <span>Neto</span>
+                      <div class="form-check m-0">
+                        <input class="form-check-input" type="checkbox" id="resumen-neto-manual" ${netoManual?'checked':''} ${readonly?'disabled':''}>
+                        <label class="form-check-label small" for="resumen-neto-manual">Manual</label>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="text-end align-middle resumen-value">
+                    <input class="form-control form-control-sm text-end fw-bold" name="monto_neto_clp_manual" type="number" step="1" value="${netoManual ? prefill.monto_neto_clp_manual : (prefill.monto_neto_clp||0)}" ${(!netoManual || readonly)?'readonly':''}>
+                  </td>
+                </tr>
+                <tr><td>IVA</td><td class="text-end resumen-value" id="resumen-iva">${Format.clp(prefill.monto_iva_clp||0)}</td></tr>
+                <tr class="table-active"><td>Total</td><td class="text-end fw-bold resumen-value" id="resumen-total">${Format.clp(prefill.monto_total_clp||0)}</td></tr>
               </table>
 
               <div class="d-grid gap-2" id="botones-estado">
@@ -338,8 +392,30 @@ window.SolicitudesView = {
     SolicitudesView._renderCPs();
     SolicitudesView._renderReceptores();
     SolicitudesView._renderBotones();
+    SolicitudesView._syncHESField();
+    SolicitudesView._syncCPsConNetoManual();
+    SolicitudesView._recalcular();
 
     // Eventos
+    $('#hes-tiene').on('change', () => SolicitudesView._syncHESField());
+    $('#sel-cliente-facturacion').on('change', () => SolicitudesView._mostrarDatosFacturacionSeleccionados());
+    $('[name=empresa_emisora]').on('change', () => SolicitudesView._recalcular());
+
+    $('#resumen-neto-manual').on('change', function() {
+      const checked = $(this).is(':checked');
+      const $manual = $('[name=monto_neto_clp_manual]');
+      $manual.prop('readonly', !checked || SolicitudesView._state.readonly);
+      if (!checked) $manual.val(SolicitudesView._lastNetoAutomatico || 0);
+      else if (!$manual.val()) $manual.val(SolicitudesView._lastNetoAutomatico || 0);
+      SolicitudesView._syncCPsConNetoManual();
+      SolicitudesView._recalcular();
+    });
+
+    $('[name=monto_neto_clp_manual]').on('input change', () => {
+      SolicitudesView._syncCPsConNetoManual();
+      SolicitudesView._recalcular();
+    });
+
     $('#btn-uf').on('click', () => {
       const fecha = $('[name=uf_fecha]').val();
       if (!fecha) return UI.toast('Selecciona una fecha UF', 'warning');
@@ -377,12 +453,12 @@ window.SolicitudesView = {
     });
 
     $('[name=moneda_base], [name=uf_valor], [name=uf_fecha]').on('change input', () => { SolicitudesView._aplicarUFEnCPActivo(); SolicitudesView._actualizarObservacionUF(); SolicitudesView._renderCPs(); SolicitudesView._recalcular(); });
-    $('[name=empresa_emisora]').on('change', () => SolicitudesView._recalcular());
   },
 
   _onClienteSeleccionado(c, receptoresActuales, cpsActuales) {
     SolicitudesView._state.clienteActual = c;
     SolicitudesView._toggleContratoHabitat(c);
+    SolicitudesView._renderDatosFacturacionSolicitud((SolicitudesView._state.prefill && SolicitudesView._state.prefill.cliente_facturacion_id) || '');
     SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val() || c.coordinador_id || '');
     if (!receptoresActuales || !receptoresActuales.length) {
       SolicitudesView._state.receptores = [...(c.receptores || [])];
@@ -394,7 +470,11 @@ window.SolicitudesView = {
       SolicitudesView._renderCPs();
       SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val() || c.coordinador_id || '');
     }).fail(e => UI.toast(e.message || 'No se pudieron cargar los CPs del cliente', 'danger'));
-    if (!$('[name=hes_numero]').val() && c.requiere_hes) $('[name=hes_numero]').val('');
+    if (c.requiere_hes && String($('[name=hes_numero]').val() || '').trim().toUpperCase() === 'N/A') {
+      $('#hes-tiene').prop('checked', true);
+      $('[name=hes_numero]').val('');
+      SolicitudesView._syncHESField();
+    }
   },
 
   _esHabitat(cliente) {
@@ -411,6 +491,54 @@ window.SolicitudesView = {
     $('#field-oc').toggleClass('d-none', esHabitat);
     if (esHabitat) $('[name=oc_numero]').val('');
     else $('[name=contrato_numero]').val('');
+  },
+
+  _syncHESField() {
+    const checked = $('#hes-tiene').is(':checked');
+    const readonly = SolicitudesView._state && SolicitudesView._state.readonly;
+    const $hes = $('[name=hes_numero]');
+    if (!$hes.length) return;
+    if (!checked) {
+      $hes.val('N/A').prop('readonly', true);
+      return;
+    }
+    $hes.prop('readonly', !!readonly);
+    if (String($hes.val() || '').trim().toUpperCase() === 'N/A') $hes.val('');
+  },
+
+  _renderDatosFacturacionSolicitud(selectedId) {
+    const $sel = $('#sel-cliente-facturacion');
+    if (!$sel.length) return;
+    const cliente = SolicitudesView._state && SolicitudesView._state.clienteActual;
+    const datos = (cliente && cliente.datos_facturacion) || [];
+    $sel.empty();
+    if (!datos.length) {
+      $sel.append('<option value="">Datos cliente 1</option>');
+      return;
+    }
+    datos.forEach((dato, i) => {
+      const id = dato.es_original ? '' : dato.id;
+      const label = `${dato.etiqueta || `Datos cliente ${i + 1}`} - ${dato.razon_social || cliente.nombre_corto || ''}`;
+      $sel.append($('<option>').val(id).text(label).prop('selected', String(id) === String(selectedId || '')));
+    });
+    if (selectedId && !$sel.find(`option[value="${selectedId}"]`).length) $sel.val('');
+    SolicitudesView._mostrarDatosFacturacionSeleccionados();
+  },
+
+  _mostrarDatosFacturacionSeleccionados() {
+    const cliente = SolicitudesView._state && SolicitudesView._state.clienteActual;
+    const datos = (cliente && cliente.datos_facturacion) || [];
+    const selectedId = $('#sel-cliente-facturacion').val() || '';
+    const dato = datos.find(item => String(item.es_original ? '' : item.id) === String(selectedId)) || datos[0];
+    if (!dato) {
+      $('#cliente-facturacion-preview').text('');
+      return;
+    }
+    $('#cliente-facturacion-preview').text([
+      dato.rut ? `RUT ${dato.rut}` : '',
+      dato.giro || '',
+      dato.direccion || ''
+    ].filter(Boolean).join(' · '));
   },
 
   _renderCPs() {
@@ -433,7 +561,11 @@ window.SolicitudesView = {
           `}
         </td>
         <td><input class="form-control form-control-sm text-end" ${readonly?'readonly':''} type="number" step="0.01" value="${cp.monto_uf||''}" data-cp="${i}" data-field="monto_uf"></td>
-        <td class="text-end"><small data-cp-clp="${i}">${Format.clp(SolicitudesView._cpMontoCLP(cp, ufValor))}</small></td>
+        <td>
+          <div class="d-flex align-items-center justify-content-end gap-2">
+            <input class="form-control form-control-sm text-end" style="max-width: 170px;" readonly type="number" step="1" value="${SolicitudesView._cpMontoCLP(cp, ufValor)}" data-cp="${i}" data-field="monto_clp">
+          </div>
+        </td>
         ${cpEditable?`<td>${!readonly ? `<button class="btn btn-sm btn-outline-danger" onclick="SolicitudesView._removeCP(${i})">×</button>` : ''}</td>`:''}
       </tr>`).join(''));
     $('#tbody-cps input, #tbody-cps select').on('focus', function() {
@@ -452,8 +584,11 @@ window.SolicitudesView = {
       }
       SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
       const ufValor = Number($('[name=uf_valor]').val()) || 0;
-      SolicitudesView._state.cps[i].monto_clp = SolicitudesView._cpMontoCLP(SolicitudesView._state.cps[i], ufValor);
-      $(`[data-cp-clp="${i}"]`).text(Format.clp(SolicitudesView._state.cps[i].monto_clp));
+      if (!SolicitudesView._cpEsManual(SolicitudesView._state.cps[i])) {
+        SolicitudesView._state.cps[i].monto_clp = SolicitudesView._cpMontoCLP(SolicitudesView._state.cps[i], ufValor);
+        $(`[data-cp="${i}"][data-field="monto_clp"]`).val(SolicitudesView._state.cps[i].monto_clp);
+      }
+      SolicitudesView._syncCPsConNetoManual();
       SolicitudesView._recalcular();
     });
     SolicitudesView._recalcular();
@@ -469,6 +604,8 @@ window.SolicitudesView = {
     const $sel = $('#sel-coordinador');
     if (!$sel.length) return;
     const all = SolicitudesView._allCoordinadores || [];
+    const user = AuthService.user && AuthService.user();
+    const coordFijo = user && user.rol !== 'admin' ? user.coordinador_id : null;
     const state = SolicitudesView._state || {};
     const cliente = state.clienteActual;
     const asignaciones = (cliente && cliente.coordinadores) || [];
@@ -484,7 +621,9 @@ window.SolicitudesView = {
     }).filter(Boolean));
 
     let coords = all;
-    if (asignaciones.length) {
+    if (coordFijo) {
+      coords = all.filter(c => c.id === coordFijo);
+    } else if (asignaciones.length) {
       const ids = new Set(asignaciones
         .filter(a => !a.cp_nombre || !cpNombresSeleccionados.size || cpNombresSeleccionados.has(a.cp_nombre))
         .map(a => a.coordinador_id));
@@ -494,19 +633,70 @@ window.SolicitudesView = {
       coords = all.filter(c => c.id === cliente.coordinador_id);
     }
 
-    const actual = selectedId || $sel.val() || '';
+    const actual = coordFijo || selectedId || $sel.val() || '';
     $sel.empty().append('<option value="">seleccionar</option>');
     coords.forEach(c => $sel.append($('<option>').val(c.id).text(c.nombre).prop('selected', c.id === actual)));
     if (actual && !coords.some(c => c.id === actual)) {
       const extra = all.find(c => c.id === actual);
       if (extra) $sel.append($('<option>').val(extra.id).text(extra.nombre).prop('selected', true));
     }
+    const isReadonly = $sel.data('readonly') === 1 || $sel.data('readonly') === '1';
+    $sel.prop('disabled', isReadonly || !!coordFijo);
   },
 
   _cpMontoCLP(cp, ufValor) {
+    if (SolicitudesView._cpEsManual(cp)) {
+      const manual = cp.monto_clp_manual !== null && cp.monto_clp_manual !== undefined && cp.monto_clp_manual !== ''
+        ? Number(cp.monto_clp_manual)
+        : Number(cp.monto_clp);
+      return Math.round(Number.isFinite(manual) ? manual : 0);
+    }
     const montoUF = Number(cp.monto_uf);
     if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * ufValor);
     return Math.round(Number(cp.monto_clp) || 0);
+  },
+
+  _cpMontoAutomatico(cp, ufValor) {
+    const montoUF = Number(cp.monto_uf);
+    if (!Number.isNaN(montoUF) && montoUF > 0 && ufValor) return Math.round(montoUF * ufValor);
+    return Math.round(Number(cp.monto_clp) || 0);
+  },
+
+  _cpEsManual(cp) {
+    return cp && (cp.monto_clp_es_manual === true || cp.monto_clp_es_manual === 1 || cp.monto_clp_es_manual === '1' || cp.monto_clp_es_manual === 'true');
+  },
+
+  _syncCPsConNetoManual() {
+    const state = SolicitudesView._state || {};
+    const cps = state.cps || [];
+    if (!cps.length) return;
+
+    const ufValor = Number($('[name=uf_valor]').val()) || 0;
+    if (!SolicitudesView._netoManualActivo()) {
+      cps.forEach((cp, i) => {
+        cp.monto_clp_manual = null;
+        cp.monto_clp_es_manual = 0;
+        cp.monto_clp = SolicitudesView._cpMontoAutomatico(cp, ufValor);
+        $(`[data-cp="${i}"][data-field="monto_clp"]`).val(cp.monto_clp);
+      });
+      return;
+    }
+
+    const netoManual = Math.round(Number($('[name=monto_neto_clp_manual]').val()) || 0);
+    const bases = cps.map(cp => SolicitudesView._cpMontoAutomatico(cp, ufValor));
+    const totalBase = bases.reduce((sum, value) => sum + value, 0);
+    let asignado = 0;
+
+    cps.forEach((cp, i) => {
+      const monto = i === cps.length - 1
+        ? netoManual - asignado
+        : Math.round(netoManual * (totalBase > 0 ? bases[i] / totalBase : 1 / cps.length));
+      asignado += monto;
+      cp.monto_clp = monto;
+      cp.monto_clp_manual = monto;
+      cp.monto_clp_es_manual = 1;
+      $(`[data-cp="${i}"][data-field="monto_clp"]`).val(monto);
+    });
   },
 
   _aplicarUFEnCPActivo() {
@@ -520,8 +710,9 @@ window.SolicitudesView = {
       : (cps.length === 1 ? 0 : null);
     const indices = active === null ? cps.map((_, i) => i) : [active];
     indices.forEach(i => {
+      if (SolicitudesView._cpEsManual(cps[i])) return;
       cps[i].monto_clp = SolicitudesView._cpMontoCLP(cps[i], ufValor);
-      $(`[data-cp-clp="${i}"]`).text(Format.clp(cps[i].monto_clp));
+      $(`[data-cp="${i}"][data-field="monto_clp"]`).val(cps[i].monto_clp);
     });
   },
 
@@ -531,12 +722,17 @@ window.SolicitudesView = {
 
   _checkCPBalance() {
     const neto = SolicitudesView._lastNeto || 0;
+    const netoManual = SolicitudesView._netoManualActivo();
     const ufValor = Number($('[name=uf_valor]').val()) || 0;
     const sumUF = SolicitudesView._state.cps.reduce((a, c) => a + (Number(c.monto_uf)||0), 0);
     const sumCP = SolicitudesView._state.cps.reduce((a, c) => a + SolicitudesView._cpMontoCLP(c, ufValor), 0);
     const diff = Math.abs(sumCP - neto);
     if (sumUF > 0 && !ufValor) {
       $('#cp-alerta').html('<span class="text-warning">Ingresa o busca el valor UF para calcular el monto en pesos.</span>');
+      return;
+    }
+    if (netoManual) {
+      $('#cp-alerta').html(`<span class="text-muted">Neto manual aplicado. Total CP calculado: ${Format.clp(sumCP)}</span>`);
       return;
     }
     if (neto > 0 && diff > 1) {
@@ -564,15 +760,22 @@ window.SolicitudesView = {
     const empresa = AppConfig.empresasEmisoras.find(e => e.codigo === empresaCod) || AppConfig.empresasEmisoras[0];
 
     const ufValor = Number($('[name=uf_valor]').val()) || 0;
-    const netoCLP = (cps || []).reduce((sum, cp) => sum + SolicitudesView._cpMontoCLP(cp, ufValor), 0);
+    const netoAutomatico = (cps || []).reduce((sum, cp) => sum + SolicitudesView._cpMontoAutomatico(cp, ufValor), 0);
+    SolicitudesView._lastNetoAutomatico = netoAutomatico;
+    if (!SolicitudesView._netoManualActivo()) $('[name=monto_neto_clp_manual]').val(netoAutomatico);
+    const manual = SolicitudesView._netoManualActivo() ? Number($('[name=monto_neto_clp_manual]').val()) : null;
+    const netoCLP = manual !== null && Number.isFinite(manual) ? Math.round(manual) : netoAutomatico;
     const ivaCLP = empresa.afectoIva ? SolicitudesView._redondearIVA(netoCLP * (empresa.ivaPct || 0.19)) : 0;
     const totalCLP = netoCLP + ivaCLP;
     SolicitudesView._lastNeto = netoCLP;
 
-    $('#resumen-neto').text(Format.clp(netoCLP));
     $('#resumen-iva').text(empresa.afectoIva ? Format.clp(ivaCLP) : 'Exento');
     $('#resumen-total').text(Format.clp(totalCLP));
     SolicitudesView._checkCPBalance();
+  },
+
+  _netoManualActivo() {
+    return $('#resumen-neto-manual').is(':checked');
   },
 
   _renderBotones() {
@@ -737,6 +940,9 @@ window.SolicitudesView = {
     const { cps, receptores } = SolicitudesView._state;
     const ufFecha = val('uf_fecha') || null;
     const ufValor = val('uf_valor') ? Number(val('uf_valor')) : null;
+    const netoManualActivo = SolicitudesView._netoManualActivo();
+    const netoManual = netoManualActivo ? Number(val('monto_neto_clp_manual')) || 0 : null;
+    const hesNumero = $('#hes-tiene').is(':checked') ? (val('hes_numero') || null) : 'N/A';
 
     return {
       empresa_emisora: val('empresa_emisora') || 'MAS_CONSULTORES',
@@ -745,21 +951,26 @@ window.SolicitudesView = {
       periodo: val('periodo'),
       fecha_solicitud: ufFecha || SolicitudesView._hoyISO(),
       cliente_id: val('cliente_id') || $('#sel-cliente').val(),
+      cliente_facturacion_id: val('cliente_facturacion_id') || null,
       coordinador_id: val('coordinador_id') || null,
       oc_numero: val('oc_numero') || null,
       contrato_numero: val('contrato_numero') || null,
-      hes_numero: val('hes_numero') || null,
+      hes_numero: hesNumero,
       glosa: val('glosa'),
       area: $('[name=area_plataforma]').is(':checked') ? 'Plataforma' : null,
       moneda_base: val('moneda_base') || 'CLP',
       uf_fecha: ufFecha,
       uf_valor: ufValor,
+      monto_neto_clp_manual: netoManual,
+      monto_neto_clp: netoManualActivo ? netoManual : SolicitudesView._lastNetoAutomatico,
       observaciones: SolicitudesView._observacionesConUF(val('observaciones'), ufFecha, ufValor),
       cps: cps.map(cp => ({
         cp_id: cp.cp_id || null,
         cp_codigo: cp.cp_codigo || cp.codigo || '',
         monto_uf: Number(cp.monto_uf) || null,
-        monto_clp: SolicitudesView._cpMontoCLP(cp, Number(val('uf_valor')) || 0)
+        monto_clp: SolicitudesView._cpMontoCLP(cp, Number(val('uf_valor')) || 0),
+        monto_clp_manual: SolicitudesView._cpEsManual(cp) ? SolicitudesView._cpMontoCLP(cp, Number(val('uf_valor')) || 0) : null,
+        monto_clp_es_manual: SolicitudesView._cpEsManual(cp) ? 1 : 0
       })).filter(cp => cp.cp_id || cp.cp_codigo),
       receptores: receptores.map(r => ({ receptor_id: r.id || r.receptor_id })).filter(r => r.receptor_id)
     };
@@ -784,5 +995,6 @@ window.SolicitudesView = {
   },
 
   _state: { sol: null, readonly: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [], activeCpIndex: null },
-  _lastNeto: 0
+  _lastNeto: 0,
+  _lastNetoAutomatico: 0
 };

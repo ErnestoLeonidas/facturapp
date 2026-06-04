@@ -3,7 +3,7 @@ window.AdminService = {
   crearUsuario(payload) { return Api.post('/admin/usuarios', payload); },
   cambiarPasswordUsuario(id, password) { return Api.put('/admin/usuarios/' + encodeURIComponent(id) + '/password', { password }); },
   eliminarUsuario(id) { return Api.del('/admin/usuarios/' + encodeURIComponent(id)); },
-  audit(limit) { return Api.get('/admin/audit?limit=' + (limit || 80)); },
+  audit(limit) { return Api.get('/admin/audit?limit=' + (limit || 8)); },
   exportarPendientesOCMes() {
     const token = AuthService.token();
     const url = AppConfig.apiBase + '/admin/reportes/pendientes-oc-mes/export';
@@ -60,9 +60,10 @@ window.AdminService = {
         return resp.blob();
       })
       .then(blob => {
+        const anio = params && params.anio ? params.anio : new Date().getFullYear();
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'Proyecciones_Plataformas.xlsx';
+        a.download = 'Proyecciones_Plataformas_' + anio + '.xlsx';
         document.body.appendChild(a);
         a.click();
         setTimeout(() => {

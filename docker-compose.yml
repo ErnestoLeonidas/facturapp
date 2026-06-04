@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file:
+      - backend/.env.production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - backend/.env.production
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    volumes:
+      - factuflow_sqlite:/app/data
+
+volumes:
+  postgres_data:
+  factuflow_sqlite:

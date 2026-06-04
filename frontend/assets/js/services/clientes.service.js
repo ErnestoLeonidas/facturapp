@@ -8,5 +8,6 @@ window.ClientesService = {
   cps(clienteId)        { return Api.get('/cp?clienteId=' + encodeURIComponent(clienteId)); },
   coordinadores(clienteId) { return Api.get('/clientes/' + encodeURIComponent(clienteId) + '/coordinadores'); },
   addCoordinador(clienteId, payload) { return Api.post('/clientes/' + encodeURIComponent(clienteId) + '/coordinadores', payload); },
-  deleteCoordinador(clienteId, asignacionId) { return Api.del('/clientes/' + encodeURIComponent(clienteId) + '/coordinadores/' + encodeURIComponent(asignacionId)); }
+  deleteCoordinador(clienteId, asignacionId) { return Api.del('/clientes/' + encodeURIComponent(clienteId) + '/coordinadores/' + encodeURIComponent(asignacionId)); },
+  addDatosFacturacion(clienteId, payload) { return Api.post('/clientes/' + encodeURIComponent(clienteId) + '/datos-facturacion', payload); }
 };
