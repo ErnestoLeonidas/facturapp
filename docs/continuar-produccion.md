@@ -2,7 +2,7 @@
 
 ## Fase actual
 
-Fase final de configuracion de despliegue con endurecimiento de seguridad en curso: dominio real definido, `CORS_ORIGIN` y `APP_PUBLIC_URL` apuntan a `https://factuflow.sirdar.cl`. Las migraciones ya no deben crear usuarios productivos con passwords conocidas, y `db:check`/`prod:check` bloquean usuarios activos con passwords conocidas. Slack bot queda postergado para una etapa posterior.
+Fase final de publicacion externa: el despliegue Docker con PostgreSQL ya valida localmente con dominio real configurado (`https://factuflow.sirdar.cl`), healthchecks activos, passwords seguras y checks estrictos OK. Slack bot queda postergado para una etapa posterior.
 
 ## Ya modificado
 
@@ -19,6 +19,7 @@ Fase final de configuracion de despliegue con endurecimiento de seguridad en cur
   - Runtime backend ya puede arrancar con `DATABASE_URL` si migraciones/checks PostgreSQL pasan
   - Slack bot no es requisito de esta salida; `SLACK_BOT_TOKEN` puede quedar vacio
   - UI Slack queda oculta por defecto con `AppConfig.features.slackBot=false`
+  - `/api/health` publico valida conexion DB y responde `503` si la base no esta disponible
 - Checks:
   - `backend/src/db-check.js`
   - `backend/src/prod-check.js`
@@ -36,6 +37,9 @@ Fase final de configuracion de despliegue con endurecimiento de seguridad en cur
   - `.dockerignore`
   - SQLite persistente en volumen Docker `factuflow_sqlite`
   - `docker-compose.yml` ahora levanta `postgres` junto con `backend` para produccion PostgreSQL
+  - `postgres` tiene healthcheck `pg_isready`
+  - `backend` espera `postgres` healthy, ejecuta `npm run migrate` y luego `npm start`
+  - `backend` tiene healthcheck HTTP contra `/api/health`
 - Backup/restore PostgreSQL:
   - `scripts/backup-postgres.sh`
   - `scripts/restore-postgres.sh`
@@ -92,12 +96,10 @@ Las rutas/servicios/utils del runtime ya no tienen `require('../db')`, `db.prepa
 
 Pendiente:
 
-1. Ejecutar `npm run rotate:passwords` con `ADMIN_BOOTSTRAP_USER`, `ADMIN_BOOTSTRAP_EMAIL` y `ADMIN_BOOTSTRAP_PASSWORD` definidos por infraestructura o la responsable del sistema.
-2. Verificar `npm run db:check` hasta obtener `OK Usuarios activos con passwords conocidas: 0`.
-3. Cargar o validar datos reales; `ALLOW_EMPTY_DB_CHECK=1` no debe usarse en produccion.
-4. Publicar el contenedor detras del Proxy Manager corporativo con HTTPS para `https://factuflow.sirdar.cl`.
-5. Configurar DNS/proxy externo para enrutar el dominio al host donde corre Docker.
-6. Ejecutar smoke final desde navegador usando el dominio publico una vez publicado.
+1. Publicar el contenedor detras del Proxy Manager corporativo con HTTPS para `https://factuflow.sirdar.cl`.
+2. Configurar DNS/proxy externo para enrutar el dominio al host donde corre Docker.
+3. Ejecutar smoke final desde navegador usando el dominio publico una vez publicado.
+4. Mantener `ALLOW_EMPTY_DB_CHECK=0` en produccion.
 
 ## Validado en esta etapa
 
@@ -164,8 +166,21 @@ Pendiente:
   - `docker compose up -d --build` levanto `backend` y `postgres`.
   - PostgreSQL no queda expuesto al host en el Compose base; backend conecta por `postgres:5432`.
   - `npm run migrate`, `npm run db:check` y `npm run prod:check` estaban OK antes de activar bloqueo por passwords conocidas/base vacia.
-  - `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` validaba `deployment_database_url`, `deployment_cors_origin` y `deployment_public_url`; debe repetirse despues de rotar passwords y cargar datos reales.
+  - `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` validaba `deployment_database_url`, `deployment_cors_origin` y `deployment_public_url`; ya fue repetido despues de validar passwords seguras y datos cargados.
   - Smoke HTTP Docker OK: `/` responde `200`, login admin OK y `/api/empresas` devuelve 2 empresas.
+- Endurecimiento de arranque/healthchecks OK:
+  - `docker compose config --services` parsea `postgres` y `backend`.
+  - `docker compose --env-file backend/.env.production -f docker-compose.postgres.yml config --services` parsea `postgres`.
+  - `node --check` OK para `server.js`, `db-check.js`, `prod-check.js`, `rotate-passwords.js` y `security/password-audit.js`.
+  - `/api/health` probado con backend local temporal en `PORT=3202`; responde `{ ok: true, database: "sqlite" }`.
+  - Reglas de bootstrap password validan rechazo de password conocida y aceptacion de password fuerte de ejemplo.
+  - Docker Desktop activo el 2026-06-05: `docker compose up -d --build` recreo `backend` + `postgres`; ambos quedaron `healthy`.
+  - `/api/health` en `http://127.0.0.1:3000/api/health` responde `{ ok: true, database: "postgres" }`.
+  - `docker compose exec -T backend npm run migrate` OK; sin migraciones PostgreSQL pendientes.
+  - `docker compose exec -T backend npm run db:check` OK: 20 clientes, 6 usuarios activos, 0 passwords conocidas.
+  - `docker compose exec -T backend npm run prod:check` OK.
+  - `docker compose exec -T backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check"` OK con `deployment_database_url`, `deployment_cors_origin` y `deployment_public_url`.
+  - `docker compose exec -T backend npm run rotate:passwords` ejecutado sin bootstrap; usuarios rotados por password conocida: 0.
 - Docker SQLite persistente OK:
   - `docker compose up -d --build` reconstruyo y levanto `backend` en `3000`.
   - Contenedor con `DATABASE_URL` vacio y `SQLITE_PATH=/app/data/facturapp.sqlite`.
@@ -175,18 +190,16 @@ Pendiente:
 - Decision de scripts legacy cerrada:
   - `seed`, `import-proyecciones-uf` y `db-clean-clientes` quedan como herramientas SQLite locales/desarrollo.
   - Para PostgreSQL produccion se usan `migrate`, `db:check`, `prod:check`, `backup-postgres` y `restore-postgres`.
-- `npm run db:check` queda pendiente despues de rotar passwords y cargar datos reales.
-- `npm run prod:check` queda pendiente despues de rotar passwords y cargar datos reales.
 - [x] `APP_PUBLIC_URL` apunta al dominio real.
 - [x] `CORS_ORIGIN` apunta al dominio real.
-- [ ] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK despues de rotar passwords y desactivar base vacia.
+- [x] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK despues de rotar passwords y desactivar base vacia.
 - Dominio final `https://factuflow.sirdar.cl` configurado en `backend/.env.production`.
 - `docker compose up -d --build` OK con backend + PostgreSQL.
 - `docker compose exec backend npm run migrate` OK; sin migraciones PostgreSQL pendientes.
-- `docker compose exec backend npm run db:check` debe repetirse despues de rotar passwords y cargar datos reales.
-- `docker compose exec backend npm run prod:check` debe repetirse despues de rotar passwords y cargar datos reales.
-- `docker compose exec backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check"` debe repetirse despues de rotar passwords y cargar datos reales.
+- `docker compose exec backend npm run db:check` OK con PostgreSQL definitivo.
+- `docker compose exec backend npm run prod:check` OK con PostgreSQL definitivo.
+- `docker compose exec backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check"` OK con PostgreSQL definitivo y dominio real.
 
 ## Riesgo
 
-No pasar a produccion real sin una prueba con PostgreSQL persistente y datos reales o migrados. El guard de `backend/src/db.js` sigue protegiendo scripts SQLite legacy si se ejecutan con `DATABASE_URL`; el runtime normal entra por `db-async`.
+No publicar el dominio real sin HTTPS/proxy configurado y smoke final desde navegador usando `https://factuflow.sirdar.cl`. El guard de `backend/src/db.js` sigue protegiendo scripts SQLite legacy si se ejecutan con `DATABASE_URL`; el runtime normal entra por `db-async`.

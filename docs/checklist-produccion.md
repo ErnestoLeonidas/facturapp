@@ -8,10 +8,10 @@
 - [x] Para produccion PostgreSQL: `DATABASE_URL` apunta a PostgreSQL.
 - [x] `CORS_ORIGIN` apunta al dominio real.
 - [x] `APP_PUBLIC_URL` apunta al dominio real.
-- [ ] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK con dominio real, passwords rotadas y datos reales.
-- [ ] Admin bootstrap seguro creado con `ADMIN_BOOTSTRAP_USER`, `ADMIN_BOOTSTRAP_EMAIL` y `ADMIN_BOOTSTRAP_PASSWORD`.
-- [ ] `npm run rotate:passwords` ejecutado antes de publicar.
-- [ ] `db:check` confirma cero usuarios activos con passwords conocidas.
+- [x] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK con dominio real, passwords seguras y datos cargados.
+- [x] Admin activo con password segura confirmado; `ADMIN_BOOTSTRAP_*` queda vacio porque no fue requerido en esta corrida.
+- [x] `npm run rotate:passwords` ejecutado antes de publicar.
+- [x] `db:check` confirma cero usuarios activos con passwords conocidas.
 - [x] `ALLOW_EMPTY_DB_CHECK` desactivado para produccion.
 - [x] Slack bot postergado para etapa posterior; `SLACK_BOT_TOKEN` puede quedar vacio en esta salida.
 - [x] No hay secretos reales en archivos versionados.
@@ -20,14 +20,17 @@
 
 - [x] `docker compose up -d --build` levanta backend.
 - [x] `docker compose up -d --build` levanta backend + PostgreSQL.
+- [x] Compose espera PostgreSQL healthy antes de arrancar backend.
+- [x] Backend ejecuta migraciones antes de `npm start` en Compose.
+- [x] `/api/health` responde OK y valida conexion DB.
 - [x] SQLite persistente en volumen Docker `factuflow_sqlite` validado como fallback/local.
 - [x] `docker compose -f docker-compose.postgres.yml up -d` levanta PostgreSQL de prueba (validado con `POSTGRES_PORT=55432`).
 - [x] Backend levanta sin errores.
 - [x] Migraciones SQLite corren.
 - [x] `npm run db:check` OK con SQLite.
 - [x] Migraciones PostgreSQL corren con `DATABASE_URL` real/temporal.
-- [ ] `npm run db:check` OK con PostgreSQL despues de rotar passwords y cargar datos reales.
-- [ ] `npm run prod:check` OK despues de rotar passwords y cargar datos reales.
+- [x] `npm run db:check` OK con PostgreSQL despues de rotar passwords y cargar datos reales.
+- [x] `npm run prod:check` OK despues de rotar passwords y cargar datos reales.
 - [x] Docker reinicia sin perder datos.
 
 ## Accesos
@@ -71,3 +74,5 @@
 - [x] Migrar rutas/servicios restantes de SQLite sincrono a `db-async`.
 - [x] Confirmar cero `db.prepare`, `db.exec` o `require('../db')` directos en runtime (`routes`, `services`, `utils`).
 - [x] Ejecutar prueba completa de la app con navegador y `DATABASE_URL` real/persistente.
+- [ ] Publicar detras del proxy/DNS con HTTPS para `https://factuflow.sirdar.cl`.
+- [ ] Ejecutar smoke final desde navegador usando el dominio publico.

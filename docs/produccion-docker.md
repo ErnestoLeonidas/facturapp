@@ -36,6 +36,8 @@ No versionar `backend/.env.production`.
 docker compose up -d --build
 ```
 
+El backend espera a que PostgreSQL este healthy, ejecuta `npm run migrate` y despues arranca la app. El healthcheck HTTP del backend usa `/api/health`.
+
 ## Ver logs
 
 ```bash
@@ -77,6 +79,8 @@ docker compose exec `
 El script muestra solo usuarios afectados y nunca imprime passwords completas. Si no existe ningun admin activo con password segura y no se entrega bootstrap, aborta sin rotar.
 
 Con `DATABASE_URL` configurado, el script rota PostgreSQL. Si `DATABASE_URL` esta vacio, usa la SQLite local configurada por `SQLITE_PATH`.
+
+Si ya existe un admin activo con password segura, el script puede ejecutarse sin `ADMIN_BOOTSTRAP_*`; en ese caso debe informar `Usuarios rotados por password conocida: 0`.
 
 Despues de crear el admin, entrar a Gestion y definir passwords definitivas para los usuarios que correspondan.
 
@@ -136,6 +140,26 @@ docker compose exec backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:chec
 ```
 
 `db:check` y `prod:check` fallan si detectan usuarios activos con passwords conocidas de migracion. En `NODE_ENV=production`, tambien fallan si `ALLOW_EMPTY_DB_CHECK=1`.
+
+## Healthcheck
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+Debe responder `ok: true` y `database: postgres`. Si la base no esta disponible, responde `503`.
+
+## Estado validado local
+
+Validado el 2026-06-05 con `backend/.env.production` real/ignorado por Git:
+
+- `docker compose up -d --build` reconstruye y levanta `postgres` + `backend`; ambos quedan `healthy`.
+- `/api/health` responde `ok: true` y `database: postgres`.
+- `docker compose exec -T backend npm run migrate` queda sin migraciones PostgreSQL pendientes.
+- `docker compose exec -T backend npm run rotate:passwords` ejecuta sin imprimir credenciales; usuarios rotados por password conocida: `0`.
+- `docker compose exec -T backend npm run db:check` OK: 20 clientes, 6 usuarios activos, 0 usuarios activos con passwords conocidas.
+- `docker compose exec -T backend npm run prod:check` OK.
+- `docker compose exec -T backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check"` OK con `DATABASE_URL`, `CORS_ORIGIN` y `APP_PUBLIC_URL` reales.
 
 ## Scripts legacy SQLite
 
@@ -202,27 +226,29 @@ docker compose down
 docker compose restart
 ```
 
-## Checklist antes de produccion
+## Checklist antes de publicacion externa
 
-- `backend/.env.production` existe y no esta versionado.
-- `SESSION_SECRET` no usa placeholder.
+- [x] `backend/.env.production` existe y no esta versionado.
+- [x] `SESSION_SECRET` no usa placeholder.
 - [x] `APP_PUBLIC_URL` apunta al dominio real.
 - [x] `CORS_ORIGIN` apunta al dominio real.
-- [ ] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK despues de rotar passwords y cargar datos reales.
-- `ALLOW_EMPTY_DB_CHECK` no esta activo en produccion.
-- `npm run rotate:passwords` ejecutado con admin bootstrap seguro.
-- `npm run db:check` confirma `OK Usuarios activos con passwords conocidas: 0`.
-- PostgreSQL levanta y conserva datos en el volumen `postgres_data`.
-- `npm run prod:check` no tiene bloqueos.
-- Migraciones PostgreSQL implementadas.
-- Login admin probado.
-- Login usuario probado.
-- Rutas admin bloqueadas para usuarios no admin.
-- Solicitudes listan, crean, editan y exportan.
-- Proyecciones cargan resumen, grilla y versiones.
-- Historial UF consulta.
-- Slack preview funciona sin exponer token.
-- Backup y restore probados.
+- [x] `REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check` OK con dominio real, PostgreSQL, datos cargados y passwords seguras.
+- [x] `ALLOW_EMPTY_DB_CHECK` no esta activo en produccion.
+- [x] `npm run rotate:passwords` ejecutado; no quedan usuarios activos con passwords conocidas.
+- [x] `npm run db:check` confirma `OK Usuarios activos con passwords conocidas: 0`.
+- [x] PostgreSQL levanta y conserva datos en el volumen `postgres_data`.
+- [x] `npm run prod:check` no tiene bloqueos.
+- [x] Migraciones PostgreSQL implementadas.
+- [x] Login admin probado en entorno Docker/local.
+- [x] Login usuario probado en entorno Docker/local.
+- [x] Rutas admin bloqueadas para usuarios no admin.
+- [x] Solicitudes listan, crean, editan y exportan.
+- [x] Proyecciones cargan resumen, grilla y versiones.
+- [x] Historial UF consulta.
+- [x] Slack bot postergado; UI oculta por defecto y preview tecnico ya validado sin exponer token.
+- [x] Backup y restore probados en entorno no productivo.
+- [ ] Proxy/DNS/HTTPS configurado para `https://factuflow.sirdar.cl`.
+- [ ] Smoke final probado desde navegador usando el dominio publico.
 
 ## Slack postergado
 
