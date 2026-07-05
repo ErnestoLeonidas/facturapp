@@ -1,0 +1,23 @@
+{
+  "name": "facturapp-postgres-db",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Carpeta standalone para levantar la base PostgreSQL de FacturApp",
+  "main": "src/migrate.js",
+  "scripts": {
+    "docker:up": "docker compose --env-file .env -f docker-compose.yml up -d",
+    "docker:down": "docker compose --env-file .env -f docker-compose.yml down",
+    "migrate": "node src/migrate.js",
+    "seed": "node src/seed.js",
+    "setup": "powershell -ExecutionPolicy Bypass -File scripts/setup.ps1",
+    "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1",
+    "restore": "powershell -ExecutionPolicy Bypass -File scripts/restore.ps1"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "pg": "^8.21.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,6 +1,6 @@
 # Produccion con Docker
 
-Esta guia prepara FactuFlow para despliegue con Docker. El Compose base levanta backend + PostgreSQL. SQLite queda como fallback/local ya validado.
+Esta guia prepara FactuFlow para despliegue con Docker. El Compose base levanta backend + PostgreSQL; el runtime de base de datos usa solo PostgreSQL.
 
 ## Requisitos
 
@@ -23,10 +23,11 @@ Editar `backend/.env.production`:
 - `ADMIN_BOOTSTRAP_USER`, `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD`: usar solo para crear o asegurar el admin inicial antes de publicar. No versionar secretos.
 - `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`: credenciales de PostgreSQL.
 - `DATABASE_URL`: apuntar al servicio PostgreSQL interno, por ejemplo `postgresql://factuflow:<password>@postgres:5432/factuflow`.
-- `SQLITE_PATH`: `/app/data/facturapp.sqlite` queda como fallback/local.
+- No definir `SQLITE_PATH` ni `DB_PATH`; Docker produccion usa solo PostgreSQL.
 - `APP_PUBLIC_URL`: `https://factuflow.sirdar.cl`.
 - `CORS_ORIGIN`: `https://factuflow.sirdar.cl`.
 - `SLACK_BOT_TOKEN` y `SLACK_CHANNEL_ID`: dejar vacios mientras el bot Slack este postergado; configurarlos solo cuando se habilite esa etapa.
+- Para pruebas controladas se puede activar `ENABLE_TEST_ADMIN=1` con `TEST_ADMIN_USER`, `TEST_ADMIN_EMAIL` y `TEST_ADMIN_PASSWORD`. Desactivar o rotar ese usuario antes de exponer el sitio publicamente.
 
 No versionar `backend/.env.production`.
 
@@ -36,7 +37,14 @@ No versionar `backend/.env.production`.
 docker compose up -d --build
 ```
 
-El backend espera a que PostgreSQL este healthy, ejecuta `npm run migrate` y despues arranca la app. El healthcheck HTTP del backend usa `/api/health`.
+Si el puerto local `3000` ya esta ocupado, publicar el backend en otro puerto host:
+
+```powershell
+$env:APP_PORT='3002'
+docker compose up -d --build
+```
+
+El backend espera a que PostgreSQL este healthy, ejecuta `npm run migrate`, asegura el admin temporal si `ENABLE_TEST_ADMIN=1` y despues arranca la app. El healthcheck HTTP del backend usa `/api/health`.
 
 ## Ver logs
 
@@ -52,9 +60,20 @@ docker compose exec backend npm run migrate
 
 Nota: con la configuracion de produccion actual, este comando aplica migraciones PostgreSQL usando `DATABASE_URL`.
 
-## Crear admin inicial seguro
+## Crear admin inicial
 
-Las migraciones de produccion no deben crear usuarios con passwords conocidas. Para primera instalacion o recuperacion segura, definir un admin bootstrap con una password fuerte y ejecutar la rotacion. La password debe guardarse en un gestor seguro; el script no la imprime.
+Las migraciones dejan los usuarios activos con la contraseña inicial `mas2026`, incluyendo administradores. Para primera instalacion o recuperacion, se puede usar el admin temporal controlado por variables de entorno.
+
+Para pruebas locales del entorno productivo Docker actual, `backend/.env.production` puede incluir:
+
+```text
+ENABLE_TEST_ADMIN=1
+TEST_ADMIN_USER=admin
+TEST_ADMIN_EMAIL=admin@facturapp.local
+TEST_ADMIN_PASSWORD=mas2026
+```
+
+Con eso `docker compose up -d --build` deja disponible el login `admin` / `mas2026`. Antes de publicar, desactivar `ENABLE_TEST_ADMIN` si no se usara ese usuario temporal.
 
 Bash:
 
@@ -78,7 +97,7 @@ docker compose exec `
 
 El script muestra solo usuarios afectados y nunca imprime passwords completas. Si no existe ningun admin activo con password segura y no se entrega bootstrap, aborta sin rotar.
 
-Con `DATABASE_URL` configurado, el script rota PostgreSQL. Si `DATABASE_URL` esta vacio, usa la SQLite local configurada por `SQLITE_PATH`.
+Con `DATABASE_URL` configurado, el script rota PostgreSQL. Si `DATABASE_URL` esta vacio, aborta.
 
 Si ya existe un admin activo con password segura, el script puede ejecutarse sin `ADMIN_BOOTSTRAP_*`; en ese caso debe informar `Usuarios rotados por password conocida: 0`.
 
@@ -155,20 +174,20 @@ Validado el 2026-06-05 con `backend/.env.production` real/ignorado por Git:
 
 - `docker compose up -d --build` reconstruye y levanta `postgres` + `backend`; ambos quedan `healthy`.
 - `/api/health` responde `ok: true` y `database: postgres`.
+- Si `3000` esta ocupado, `APP_PORT=3002 docker compose up -d --build` publica la misma app en `http://localhost:3002`.
 - `docker compose exec -T backend npm run migrate` queda sin migraciones PostgreSQL pendientes.
 - `docker compose exec -T backend npm run rotate:passwords` ejecuta sin imprimir credenciales; usuarios rotados por password conocida: `0`.
 - `docker compose exec -T backend npm run db:check` OK: 20 clientes, 6 usuarios activos, 0 usuarios activos con passwords conocidas.
 - `docker compose exec -T backend npm run prod:check` OK.
 - `docker compose exec -T backend sh -c "REQUIRE_DEPLOYMENT_CONFIG=1 npm run prod:check"` OK con `DATABASE_URL`, `CORS_ORIGIN` y `APP_PUBLIC_URL` reales.
 
-## Scripts legacy SQLite
-
-`npm run seed`, `npm run import:proyecciones-uf` y `npm run db:clean-clientes` son herramientas locales/SQLite. No usarlas como operacion PostgreSQL de produccion. Con `DATABASE_URL` definido, el guard de `backend/src/db.js` evita que scripts SQLite sincronos se ejecuten accidentalmente contra el runtime PostgreSQL.
+## Scripts de base de datos
 
 Para PostgreSQL de produccion usar:
 
 ```bash
 npm --prefix backend run migrate
+npm --prefix backend run seed
 npm --prefix backend run db:check
 npm --prefix backend run prod:check
 ```

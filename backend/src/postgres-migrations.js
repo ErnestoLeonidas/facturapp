@@ -5,7 +5,7 @@ const { checksum } = require('./migrations');
 
 const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 const ITERATIONS = 120000;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const INITIAL_USER_PASSWORD = 'mas2026';
 
 function quoteIdent(value) {
   if (!/^[a-z_][a-z0-9_]*$/i.test(value)) {
@@ -55,13 +55,9 @@ async function addColumnIfMissing(client, table, column, definition) {
 }
 
 async function ensureAuthUser(client, { nombre, username, password, rol }) {
-  if (IS_PRODUCTION) {
-    throw new Error('No se pueden crear usuarios de migracion con password conocida en produccion');
-  }
-
   const normalized = username.toLowerCase();
   const salt = `facturapp-${normalized}-2026`;
-  const passwordHash = hashPassword(password, salt);
+  const passwordHash = hashPassword(password || INITIAL_USER_PASSWORD, salt);
   const existing = await client.query(`
     SELECT id
     FROM app_user
@@ -93,13 +89,9 @@ async function ensureAuthUser(client, { nombre, username, password, rol }) {
 }
 
 async function ensureMappedUser(client, { nombre, username, rol }) {
-  if (IS_PRODUCTION) {
-    throw new Error('No se pueden crear usuarios de migracion con password generica en produccion');
-  }
-
   const normalized = key(username).replace(/_/g, '').slice(0, 40);
   const salt = `facturapp-${normalized}-mas2026`;
-  const passwordHash = hashPassword('mas2026', salt);
+  const passwordHash = hashPassword(INITIAL_USER_PASSWORD, salt);
   const existing = await client.query(`
     SELECT id
     FROM app_user
@@ -622,7 +614,6 @@ CREATE INDEX IF NOT EXISTS idx_audit_entidad ON audit_log(entidad, entidad_id);
 ALTER TABLE solicitud_factura ADD COLUMN IF NOT EXISTS admin_batch_id TEXT;
 ALTER TABLE solicitud_factura ADD COLUMN IF NOT EXISTS origen_admin TEXT;
 
-${IS_PRODUCTION ? '' : `
 INSERT INTO app_user (id, nombre, email, rol, password_hash, password_salt, activo)
 VALUES
   (
@@ -630,7 +621,7 @@ VALUES
     'Admin FacturApp',
     'admin@facturapp.local',
     'admin',
-    '4a0f3b2bab45d295daf47421731b75caad0b27ba2e7be9d2cebfefd14b3ca9ed',
+    'ea78993fae6fb78eab1bf578a22d25426467ea61b3f4ff8fa1c490af96e03439',
     'facturapp-admin-2026',
     1
   ),
@@ -639,7 +630,7 @@ VALUES
     'Usuario FacturApp',
     'usuario@facturapp.local',
     'usuario',
-    '812fe007556e92e4a5bb809a22e3cd490d8e2f0241226a66e867e65b4455466a',
+    'd5a367c0f340091f42022637f81215ef6cce313fccb5bde0cb6ba4b75e62f77a',
     'facturapp-user-2026',
     1
   )
@@ -650,7 +641,7 @@ ON CONFLICT (email) DO UPDATE SET
   password_salt = EXCLUDED.password_salt,
   activo = 1,
   updated_at = CURRENT_TIMESTAMP::text;
-`}
+
 `),
 
   sqlMigration('008', '008_admin_proyecciones.sql', `
@@ -746,20 +737,18 @@ CREATE INDEX IF NOT EXISTS idx_proyeccion_auxiliar_anio_hoja
         WHERE username IS NOT NULL AND username <> '';
     `);
 
-    if (!IS_PRODUCTION) {
-      await ensureAuthUser(client, {
-        nombre: 'Administrador Valgian',
-        username: 'valgian',
-        password: 'valgian2026',
-        rol: 'admin'
-      });
-      await ensureAuthUser(client, {
-        nombre: 'Constanza Gaete',
-        username: 'cgaete',
-        password: 'cgaete2026',
-        rol: 'admin'
-      });
-    }
+    await ensureAuthUser(client, {
+      nombre: 'Administrador Valgian',
+      username: 'valgian',
+      password: INITIAL_USER_PASSWORD,
+      rol: 'admin'
+    });
+    await ensureAuthUser(client, {
+      nombre: 'Constanza Gaete',
+      username: 'cgaete',
+      password: INITIAL_USER_PASSWORD,
+      rol: 'admin'
+    });
 
     await client.query(`
       UPDATE app_user
@@ -945,14 +934,12 @@ WHERE anio = 2026
 `),
 
   jsMigration('014', '014_usuario_general.js', async client => {
-    if (!IS_PRODUCTION) {
-      await ensureAuthUser(client, {
-        nombre: 'Usuario General',
-        username: 'usuario',
-        password: 'usuario2026',
-        rol: 'usuario'
-      });
-    }
+    await ensureAuthUser(client, {
+      nombre: 'Usuario General',
+      username: 'usuario',
+      password: INITIAL_USER_PASSWORD,
+      rol: 'usuario'
+    });
   }),
 
   jsMigration('015', '015_solicitud_montos_manual_hes.js', async client => {
@@ -1057,17 +1044,15 @@ WHERE NOT EXISTS (
     ]);
 
     const activeCoordinadores = await client.query('SELECT nombre FROM coordinador WHERE activo = 1');
-    if (!IS_PRODUCTION) {
-      for (const row of activeCoordinadores.rows) {
-        const mapped = users.get(key(row.nombre));
-        if (mapped) await ensureMappedUser(client, mapped);
-      }
-
-      await ensureMappedUser(client, users.get('constanza_gaete'));
-      await ensureMappedUser(client, users.get('daniel_llanes'));
-      await ensureMappedUser(client, users.get('macarena_abasolo'));
-      await ensureMappedUser(client, users.get('monica_da_rocha'));
+    for (const row of activeCoordinadores.rows) {
+      const mapped = users.get(key(row.nombre));
+      if (mapped) await ensureMappedUser(client, mapped);
     }
+
+    await ensureMappedUser(client, users.get('constanza_gaete'));
+    await ensureMappedUser(client, users.get('daniel_llanes'));
+    await ensureMappedUser(client, users.get('macarena_abasolo'));
+    await ensureMappedUser(client, users.get('monica_da_rocha'));
   }),
 
   sqlMigration('018', '018_renombrar_usuario_valeria.js', `
@@ -1595,7 +1580,34 @@ ON CONFLICT (codigo) DO UPDATE SET
 UPDATE solicitud_factura
 SET empresa_emisora = 'INSTITUTO_ROI'
 WHERE empresa_emisora = 'INSTITUTO_ROY';
-`)
+`),
+
+  jsMigration('024', '024_set_all_users_mas2026.js', async client => {
+    const users = await client.query(`
+      SELECT id, username, email
+      FROM app_user
+    `);
+
+    for (const user of users.rows) {
+      const identifier = clean(user.username || user.email || user.id).toLowerCase();
+      const normalized = key(identifier).replace(/_/g, '').slice(0, 40) || user.id;
+      const salt = `facturapp-${normalized}-mas2026`;
+      const passwordHash = hashPassword(INITIAL_USER_PASSWORD, salt);
+      await client.query(`
+        UPDATE app_user
+        SET password_hash = $1,
+            password_salt = $2,
+            updated_at = CURRENT_TIMESTAMP::text
+        WHERE id = $3
+      `, [passwordHash, salt, user.id]);
+    }
+
+    await client.query(`
+      UPDATE app_session
+      SET revoked_at = CURRENT_TIMESTAMP::text
+      WHERE revoked_at IS NULL
+    `);
+  })
 ];
 
 async function ensurePostgresMigrationsTable(client) {

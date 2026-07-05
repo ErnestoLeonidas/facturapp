@@ -9,7 +9,6 @@ RUN npm ci --omit=dev
 
 COPY backend ./ 
 COPY frontend /app/frontend
-RUN mkdir -p /app/data
 
 EXPOSE 3000
 

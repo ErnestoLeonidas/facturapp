@@ -27,13 +27,6 @@ function resolveFromBackend(value, fallback) {
   return path.isAbsolute(raw) ? raw : path.join(BACKEND_ROOT, raw);
 }
 
-function sqlitePath() {
-  return resolveFromBackend(
-    process.env.SQLITE_PATH || process.env.DB_PATH,
-    path.join('storage', 'facturapp.sqlite')
-  );
-}
-
 function backupDir() {
   return resolveFromBackend(process.env.DB_BACKUP_DIR, 'backups');
 }
@@ -42,7 +35,7 @@ function requireProductionEnv() {
   if (process.env.NODE_ENV !== 'production') return;
   const missing = [];
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET === 'change-me') missing.push('SESSION_SECRET');
-  if (!process.env.DATABASE_URL && !process.env.SQLITE_PATH && !process.env.DB_PATH) missing.push('DATABASE_URL o SQLITE_PATH');
+  if (!process.env.DATABASE_URL) missing.push('DATABASE_URL');
   if (missing.length) {
     throw new Error(`Variables obligatorias faltantes para produccion: ${missing.join(', ')}`);
   }
@@ -67,6 +60,5 @@ module.exports = {
   backupDir,
   loadEnv,
   requireProductionEnv,
-  safeUrl,
-  sqlitePath
+  safeUrl
 };

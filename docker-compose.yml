@@ -19,14 +19,12 @@ services:
     restart: unless-stopped
     env_file:
       - backend/.env.production
-    command: ["sh", "-c", "npm run migrate && npm start"]
+    command: ["sh", "-c", "npm run migrate && npm run admin:test:ensure && npm start"]
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
-    volumes:
-      - factuflow_sqlite:/app/data
+      - "${APP_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http=require('http');const port=process.env.PORT||3000;http.get({host:'127.0.0.1',port,path:'/api/health'},res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));\""]
       interval: 15s
@@ -36,4 +34,3 @@ services:
 
 volumes:
   postgres_data:
-  factuflow_sqlite:

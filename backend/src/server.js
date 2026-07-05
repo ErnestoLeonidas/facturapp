@@ -24,7 +24,7 @@ app.get('/api/health', async (req, res) => {
       ok: true,
       data: {
         status: 'ok',
-        database: db.isPostgres ? 'postgres' : 'sqlite'
+        database: 'postgres'
       },
       meta: { generatedAt: new Date().toISOString() },
       error: null

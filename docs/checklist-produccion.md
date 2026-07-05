@@ -22,8 +22,10 @@
 - [x] `docker compose up -d --build` levanta backend + PostgreSQL.
 - [x] Compose espera PostgreSQL healthy antes de arrancar backend.
 - [x] Backend ejecuta migraciones antes de `npm start` en Compose.
+- [x] Backend asegura admin temporal de pruebas cuando `ENABLE_TEST_ADMIN=1`.
+- [x] Puerto host configurable con `APP_PORT` para evitar conflictos locales.
 - [x] `/api/health` responde OK y valida conexion DB.
-- [x] SQLite persistente en volumen Docker `factuflow_sqlite` validado como fallback/local.
+- [x] Docker produccion usa solo el volumen PostgreSQL `postgres_data`; SQLite queda fuera del Compose base.
 - [x] `docker compose -f docker-compose.postgres.yml up -d` levanta PostgreSQL de prueba (validado con `POSTGRES_PORT=55432`).
 - [x] Backend levanta sin errores.
 - [x] Migraciones SQLite corren.

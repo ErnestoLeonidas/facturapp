@@ -1,5 +1,4 @@
 require('dotenv').config();
-const { backupDatabase } = require('./db-backup');
 
 const NAME_COLUMNS = [
   ['catalogo_estado_solicitud', 'nombre'],
@@ -37,6 +36,7 @@ function tableHasColumn(table, column) {
 function normalizeNames({ backup = false } = {}) {
   const db = getDb();
   if (backup) {
+    const { backupDatabase } = require('./db-backup');
     const result = backupDatabase('pre-normalize-names');
     if (!result.skipped) console.log(`Backup previo: ${result.db}`);
     else console.log(`Backup previo omitido: ${result.reason}`);

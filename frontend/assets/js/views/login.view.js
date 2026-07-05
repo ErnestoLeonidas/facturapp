@@ -30,7 +30,12 @@ window.LoginView = {
 
             <div class="mb-3">
               <label class="form-label" for="login-password">Contraseña</label>
-              <input class="form-control" id="login-password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+              <div class="input-group password-field">
+                <input class="form-control" id="login-password" name="password" type="password" autocomplete="current-password" minlength="6" required>
+                <button class="btn btn-outline-secondary" id="toggle-password" type="button" aria-label="Mostrar contraseña" title="Mostrar contraseña">
+                  <i class="bi bi-eye" aria-hidden="true"></i>
+                </button>
+              </div>
               <div class="invalid-feedback">Ingresa tu contraseña de al menos 6 caracteres.</div>
             </div>
 
@@ -44,6 +49,19 @@ window.LoginView = {
     `);
 
     $('#login-username').trigger('focus');
+
+    $('#toggle-password').on('click', function () {
+      const $password = $('#login-password');
+      const isVisible = $password.attr('type') === 'text';
+      $password.attr('type', isVisible ? 'password' : 'text');
+      $(this)
+        .attr('aria-label', isVisible ? 'Mostrar contraseña' : 'Ocultar contraseña')
+        .attr('title', isVisible ? 'Mostrar contraseña' : 'Ocultar contraseña')
+        .find('i')
+        .toggleClass('bi-eye', isVisible)
+        .toggleClass('bi-eye-slash', !isVisible);
+      $password.trigger('focus');
+    });
 
     $('#login-form').on('submit', function (event) {
       event.preventDefault();

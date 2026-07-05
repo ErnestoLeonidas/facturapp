@@ -43,6 +43,9 @@ function requireProductionCheckConfig() {
   assert('allow_empty_db_check_disabled',
     process.env.NODE_ENV !== 'production' || process.env.ALLOW_EMPTY_DB_CHECK !== '1',
     'ALLOW_EMPTY_DB_CHECK=1 no esta permitido en produccion');
+  assert('test_admin_disabled',
+    process.env.NODE_ENV !== 'production' || !truthy(process.env.ENABLE_TEST_ADMIN),
+    'ENABLE_TEST_ADMIN=1 no esta permitido para publicacion de produccion');
 }
 
 async function checkPostgres() {
@@ -61,17 +64,14 @@ async function main() {
   if (process.env.NODE_ENV === 'production') env.requireProductionEnv();
 
   assert('session_secret', process.env.NODE_ENV !== 'production' || process.env.SESSION_SECRET !== 'change-me', 'SESSION_SECRET inseguro');
+  assert('database_url_postgres',
+    /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL || ''),
+    'DATABASE_URL PostgreSQL debe estar configurado');
   requireProductionCheckConfig();
   assert('slack_token_no_log', true, 'el token no se imprime en este check');
   requireDeploymentConfig();
 
-  if (process.env.DATABASE_URL) {
-    await checkPostgres();
-    return;
-  }
-
-  const { runChecks } = require('./db-check');
-  await runChecks();
+  await checkPostgres();
 }
 
 main().catch(error => {

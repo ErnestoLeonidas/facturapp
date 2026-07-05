@@ -378,8 +378,7 @@ async function main() {
       await rotatePostgresSelectedUsers(args.users, password);
       return;
     }
-    rotateSqliteSelectedUsers(args.users, password);
-    return;
+    throw new Error('DATABASE_URL PostgreSQL no esta configurado.');
   }
 
   const bootstrap = bootstrapConfig();
@@ -387,7 +386,7 @@ async function main() {
     await rotatePostgres(bootstrap);
     return;
   }
-  rotateSqlite(bootstrap);
+  throw new Error('DATABASE_URL PostgreSQL no esta configurado.');
 }
 
 main().catch(error => {

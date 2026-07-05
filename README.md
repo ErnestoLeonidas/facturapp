@@ -25,7 +25,7 @@ Este repo contiene el plan, los contratos y el esqueleto para iniciar Fase 1.
 ## Stack objetivo
 
 - **Frontend**: HTML + Bootstrap 5 + jQuery + JS modular. Hash routing. Servido como estático.
-- **Backend**: Node.js + Express. Postgres recomendado (SQLite válido para fase 1).
+- **Backend**: Node.js + Express con PostgreSQL como unica base activa.
 - **Integraciones**: UF oficial SII vía proxy propio con fallback externo; Google Sheets/Drive con Service Account (backend-only).
 - **Exportación**: `exceljs` para regenerar la plantilla XLSX idéntica.
 

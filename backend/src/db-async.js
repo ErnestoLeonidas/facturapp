@@ -2,16 +2,17 @@ require('./config/env');
 const { Pool } = require('pg');
 const { sslConfig } = require('./postgres');
 
-const isPostgres = Boolean(process.env.DATABASE_URL);
 let pool = null;
-let sqliteDb = null;
+const isPostgres = true;
 
-function sqlite() {
-  if (!sqliteDb) sqliteDb = require('./db');
-  return sqliteDb;
+function requireDatabaseUrl() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL PostgreSQL no esta configurado.');
+  }
 }
 
 function postgresPool() {
+  requireDatabaseUrl();
   if (!pool) {
     pool = new Pool({
       connectionString: process.env.DATABASE_URL,
@@ -21,7 +22,7 @@ function postgresPool() {
   return pool;
 }
 
-function sqliteArgs(params) {
+function positionalParams(params) {
   if (params === undefined || params === null) return [];
   if (Array.isArray(params)) return params;
   if (typeof params === 'object') return [params];
@@ -42,7 +43,7 @@ function toPostgresQuery(sql, params = []) {
     return { sql: text, params: values };
   }
 
-  const values = sqliteArgs(params);
+  const values = positionalParams(params);
   let index = 0;
   return {
     sql: String(sql).replace(/\?/g, () => `$${++index}`),
@@ -59,51 +60,27 @@ function addHoursText(hours, date = new Date()) {
 }
 
 async function all(sql, params = []) {
-  if (!isPostgres) return sqlite().prepare(sql).all(...sqliteArgs(params));
   const query = toPostgresQuery(sql, params);
   const result = await postgresPool().query(query.sql, query.params);
   return result.rows;
 }
 
 async function get(sql, params = []) {
-  if (!isPostgres) return sqlite().prepare(sql).get(...sqliteArgs(params));
   const query = toPostgresQuery(sql, params);
   const result = await postgresPool().query(query.sql, query.params);
   return result.rows[0] || null;
 }
 
 async function run(sql, params = []) {
-  if (!isPostgres) return sqlite().prepare(sql).run(...sqliteArgs(params));
   const query = toPostgresQuery(sql, params);
   return postgresPool().query(query.sql, query.params);
 }
 
 async function exec(sql) {
-  if (!isPostgres) return sqlite().exec(sql);
   return postgresPool().query(sql);
 }
 
 async function transaction(fn) {
-  if (!isPostgres) {
-    const db = sqlite();
-    const scoped = {
-      all: async (sql, params = []) => db.prepare(sql).all(...sqliteArgs(params)),
-      get: async (sql, params = []) => db.prepare(sql).get(...sqliteArgs(params)),
-      run: async (sql, params = []) => db.prepare(sql).run(...sqliteArgs(params)),
-      exec: async sql => db.exec(sql)
-    };
-
-    db.exec('BEGIN');
-    try {
-      const result = await fn(scoped);
-      db.exec('COMMIT');
-      return result;
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    }
-  }
-
   const client = await postgresPool().connect();
   const scoped = {
     all: async (sql, params = []) => {
