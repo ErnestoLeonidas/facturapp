@@ -27,7 +27,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-row">
-        <a class="brand" href="#/dashboard" aria-label="Ir al dashboard">
+        <a class="brand" href="#/dashboard" aria-label="Ir al inicio">
           <img class="brand-logo" src="assets/img/logo-mas.png" alt="MAS">
           <strong>FactuFlow</strong>
         </a>
@@ -36,12 +36,12 @@
         </button>
       </div>
       <nav class="nav flex-column mt-3" id="main-nav">
-        <a class="nav-link" href="#/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
+        <a class="nav-link" href="#/dashboard"><i class="bi bi-house-door"></i> Inicio</a>
         <a class="nav-link" href="#/solicitudes"><i class="bi bi-file-earmark-text"></i> Solicitudes</a>
-        <a class="nav-link" href="#/calendario"><i class="bi bi-calendar3"></i> Calendario</a>
+        <a class="nav-link" href="#/calendario" id="nav-calendario"><i class="bi bi-calendar3"></i> Calendario</a>
         <a class="nav-link" href="#/historial-uf"><i class="bi bi-graph-up"></i> Historial UF</a>
         <a class="nav-link" href="#/clientes"><i class="bi bi-building"></i> Clientes</a>
-        <a class="nav-link" href="#/coordinadores" id="nav-coordinadores" style="display:none"><i class="bi bi-person-badge"></i> Coordinadores</a>
+        <a class="nav-link" href="#/coordinadores" id="nav-coordinadores" style="display:none"><i class="bi bi-person-badge"></i> Responsables</a>
         <a class="nav-link" href="#/proyecciones" id="nav-proyecciones" style="display:none"><i class="bi bi-table"></i> Proyecciones</a>
         <a class="nav-link" href="#/admin" id="nav-admin" style="display:none"><i class="bi bi-shield-lock"></i> Gestión</a>
         <a class="nav-link" href="#/configuracion" id="nav-configuracion" style="display:none"><i class="bi bi-gear"></i> Configuración</a>
@@ -52,7 +52,6 @@
       <header class="topbar d-flex justify-content-between align-items-center mb-3">
         <div id="page-title"><h2 class="mb-0">Cargando…</h2></div>
         <div class="d-flex align-items-center gap-2">
-          <a class="btn btn-primary" href="#/solicitudes/nueva"><i class="bi bi-plus-lg"></i> Nueva solicitud</a>
           <button class="btn btn-outline-secondary theme-toggle-btn" type="button" id="btn-theme-toggle" aria-label="Cambiar tema">
             <i class="bi bi-moon"></i>
           </button>

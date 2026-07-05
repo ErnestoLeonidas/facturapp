@@ -1,9 +1,9 @@
 window.CoordinadoresView = {
   list() {
-    UI.setTitle('Coordinadores');
+    UI.setTitle('Responsables');
     $('#view-root').html(`
       <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center">
-        <span>Coordinadores</span>
+        <span>Responsables</span>
         <button class="btn btn-sm btn-primary" id="btn-nuevo-coord">+ Nuevo</button>
       </div></div>
       <div class="card">
@@ -51,7 +51,7 @@ window.CoordinadoresView = {
         <div class="modal-dialog">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title" id="modalCoordTitulo">Nuevo coordinador</h5>
+              <h5 class="modal-title" id="modalCoordTitulo">Nuevo responsable</h5>
               <button class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -97,14 +97,14 @@ window.CoordinadoresView = {
               <button class="btn btn-sm btn-outline-secondary" data-edit-id="${c.id}">Editar</button>
               <button class="btn btn-sm btn-outline-danger ms-1" data-delete-id="${c.id}">Eliminar</button>
             </td>
-          </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">Sin coordinadores</td></tr>');
+          </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center py-3">Sin responsables</td></tr>');
         CoordinadoresView._items = coords;
       }).fail(e => UI.error('#tbl-coordinadores', e));
     };
 
     const abrirForm = (coord) => {
       CoordinadoresView._editingId = coord ? coord.id : null;
-      $('#modalCoordTitulo').text(coord ? 'Editar coordinador' : 'Nuevo coordinador');
+      $('#modalCoordTitulo').text(coord ? 'Editar responsable' : 'Nuevo responsable');
       $('[name=coord_nombre]').val(coord ? coord.nombre : '');
       $('[name=coord_email]').val(coord ? coord.email || '' : '');
       $('[name=coord_activo]').val(coord && !coord.activo ? '0' : '1');
@@ -133,10 +133,10 @@ window.CoordinadoresView = {
       e.preventDefault();
       e.stopPropagation();
       const id = $(this).data('delete-id');
-      UI.confirm('¿Seguro que deseas eliminar este coordinador?', 'Eliminar coordinador').then(ok => {
+      UI.confirm('¿Seguro que deseas eliminar este responsable?', 'Eliminar responsable').then(ok => {
         if (!ok) return;
         CoordinadoresService.delete(id).then(() => {
-          UI.toast('Coordinador eliminado', 'success');
+          UI.toast('Responsable eliminado', 'success');
           cargar();
         }).fail(e => UI.toast(e.message || 'Error al eliminar', 'danger'));
       });
@@ -153,7 +153,7 @@ window.CoordinadoresView = {
         : CoordinadoresService.create(payload);
       req.then(() => {
         modal.hide();
-        UI.toast('Coordinador guardado', 'success');
+        UI.toast('Responsable guardado', 'success');
         cargar();
       }).fail(e => UI.toast(e.message || 'Error al guardar', 'danger'));
     });
@@ -214,7 +214,7 @@ window.CoordinadoresView = {
     $button.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Guardando');
     ClientesService.addCoordinador(clienteId, payload).then(() => {
       modal.hide();
-      UI.toast('Cliente asignado al coordinador', 'success');
+      UI.toast('Cliente asignado al responsable', 'success');
     }).fail(e => {
       $('#coord-cliente-result').html(`<div class="alert alert-danger py-2 mb-0">${e.message || 'Error al asignar cliente'}</div>`);
     }).always(() => {

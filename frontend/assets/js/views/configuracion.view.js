@@ -82,7 +82,7 @@ window.ConfiguracionView = {
                     <th>Fecha</th>
                     <th>Cliente</th>
                     <th>Solicitud</th>
-                    <th>Coordinador</th>
+                    <th>Responsable</th>
                     <th>Dias</th>
                     <th>Estado</th>
                   </tr>
@@ -195,7 +195,7 @@ window.ConfiguracionView = {
         <td><strong>${ConfiguracionView._esc(row.cliente_nombre || '')}</strong></td>
         <td><a href="#/solicitudes/${row.id}">${ConfiguracionView._esc(row.folio || '')}</a></td>
         <td>
-          ${ConfiguracionView._esc(row.coordinador_nombre || 'Sin coordinador')}
+          ${ConfiguracionView._esc(row.coordinador_nombre || 'Sin responsable')}
           ${row.slack_user_id ? `<small class="text-muted d-block">${ConfiguracionView._esc(row.slack_user_id)}</small>` : '<small class="text-warning d-block">Sin Slack ID</small>'}
         </td>
         <td>${row.dias_restantes === 0 ? 'Hoy' : row.dias_restantes}</td>

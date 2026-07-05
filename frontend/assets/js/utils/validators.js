@@ -6,7 +6,7 @@ window.Validators = {
     if (!s.periodo)         errs.push('Falta periodo.');
 
     if (s.estado === 'FACTURA SOLICITADA') {
-      if (!s.coordinador_id) errs.push('Falta encargado de solicitud.');
+      if (!s.coordinador_id) errs.push('Falta responsable.');
       if (!s.glosa)          errs.push('Falta glosa.');
       if (!s.observaciones)  errs.push('Falta observaciones.');
       if (!s.hes_numero)     errs.push('Falta HES.');

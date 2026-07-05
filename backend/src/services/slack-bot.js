@@ -225,7 +225,7 @@ async function enviarRecordatorios(options = {}) {
 
   for (const row of rows) {
     if (!row.slack_user_id) {
-      errores.push({ solicitud_id: row.id, folio: row.folio, error: 'Coordinador sin Slack ID' });
+      errores.push({ solicitud_id: row.id, folio: row.folio, error: 'Responsable sin Slack ID' });
       continue;
     }
     try {

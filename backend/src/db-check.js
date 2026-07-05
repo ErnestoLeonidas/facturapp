@@ -1,8 +1,8 @@
 require('./config/env');
 const { withPostgresClient } = require('./postgres');
 const {
-  postgresActiveUsersWithKnownPasswords,
-  sqliteActiveUsersWithKnownPasswords
+  hashPassword,
+  userSummary
 } = require('./security/password-audit');
 
 const ALLOW_EMPTY_DB_CHECK = process.env.ALLOW_EMPTY_DB_CHECK === '1';
@@ -273,45 +273,10 @@ function assertDbCheckConfig() {
   }
 }
 
-function runSqliteChecks() {
-  const db = require('./db');
-  let failed = false;
-
-  console.log('Validando integridad SQLite...');
-  checks.forEach(check => {
-    const rows = db.prepare(check.sql).all();
-    failed = printCheckResult(check, rows) || failed;
-  });
-
-  const duplicatedClients = sqliteDuplicateClientRows(db);
-  if (duplicatedClients.length) {
-    failed = true;
-    console.log(`ERROR Clientes duplicados por clave operativa: ${duplicatedClients.length}`);
-    printRows(duplicatedClients);
-  } else {
-    console.log('OK Clientes duplicados por clave operativa: 0');
-  }
-
-  const lowercaseNames = sqliteNonUppercaseNames(db)
-    .filter(row => !NAME_CHECK_IGNORED_TABLES.has(row.table));
-  if (lowercaseNames.length) {
-    failed = true;
-    console.log(`ERROR Nombres no estandarizados en mayuscula: ${lowercaseNames.length}`);
-    printRows(lowercaseNames);
-  } else {
-    console.log('OK Nombres estandarizados en mayuscula: 0 inconsistencias');
-  }
-
-  const knownPasswordUsers = sqliteActiveUsersWithKnownPasswords(db);
-  if (knownPasswordUsers.length) {
-    failed = true;
-    console.log(`ERROR Usuarios activos con passwords conocidas: ${knownPasswordUsers.length}`);
-    printRows(knownPasswordUsers);
-  } else {
-    console.log('OK Usuarios activos con passwords conocidas: 0');
-  }
-
-  finishChecks(failed);
+function usersWithoutPassword(rows, expectedPassword) {
+  return rows
+    .filter(user => hashPassword(expectedPassword, user.password_salt) !== user.password_hash)
+    .map(userSummary);
 }
 
 async function runPostgresChecks() {
@@ -343,13 +308,18 @@ async function runPostgresChecks() {
       console.log('OK Nombres estandarizados en mayuscula: 0 inconsistencias');
     }
 
-    const knownPasswordUsers = await postgresActiveUsersWithKnownPasswords(client);
-    if (knownPasswordUsers.length) {
+    const usersResult = await client.query(`
+      SELECT id, nombre, username, email, rol, password_hash, password_salt
+      FROM app_user
+      WHERE activo = 1
+    `);
+    const usersWithOtherPassword = usersWithoutPassword(usersResult.rows, 'mas2026');
+    if (usersWithOtherPassword.length) {
       failed = true;
-      console.log(`ERROR Usuarios activos con passwords conocidas: ${knownPasswordUsers.length}`);
-      printRows(knownPasswordUsers);
+      console.log(`ERROR Usuarios activos sin password mas2026: ${usersWithOtherPassword.length}`);
+      printRows(usersWithOtherPassword);
     } else {
-      console.log('OK Usuarios activos con passwords conocidas: 0');
+      console.log('OK Usuarios activos con password mas2026');
     }
 
     finishChecks(failed);
@@ -358,12 +328,8 @@ async function runPostgresChecks() {
 
 async function runChecks() {
   assertDbCheckConfig();
-  if (process.env.DATABASE_URL) {
-    await runPostgresChecks();
-    return;
-  }
-
-  runSqliteChecks();
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL PostgreSQL no esta configurado.');
+  await runPostgresChecks();
 }
 
 if (require.main === module) {

@@ -5,6 +5,7 @@ const { ok, fail, notFound } = require('../middleware/envelope');
 const { generarSolicitudXLSX } = require('../services/exportador');
 const path = require('path');
 const fs = require('fs');
+const { canViewOperationalResource } = require('../services/access');
 
 const EXPORT_DIR = path.join(__dirname, '..', '..', 'storage', 'exports');
 if (!fs.existsSync(EXPORT_DIR)) fs.mkdirSync(EXPORT_DIR, { recursive: true });
@@ -35,8 +36,7 @@ function nombreArchivoSolicitud(sol) {
 }
 
 function puedeVerSolicitud(req, sol) {
-  if (!req.user || req.user.rol === 'admin') return true;
-  return !!req.user.coordinador_id && sol.coordinador_id === req.user.coordinador_id;
+  return canViewOperationalResource(req, sol);
 }
 
 r.post('/solicitud/:id', async (req, res, next) => {

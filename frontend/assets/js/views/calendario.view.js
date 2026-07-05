@@ -27,7 +27,7 @@
         </div>
         <div class="flex-grow-1">
           <label class="form-label mb-1">Buscar</label>
-          <input class="form-control" id="cal-q" placeholder="Cliente, codigo, nombre, tipo de CP${isAdmin ? ' o coordinador' : ''}" value="${params.q || ''}">
+          <input class="form-control" id="cal-q" placeholder="Cliente, codigo, nombre, tipo de CP${isAdmin ? ' o responsable' : ''}" value="${params.q || ''}">
         </div>
         <button class="btn btn-primary" id="cal-aplicar"><i class="bi bi-search"></i> Revisar</button>
       </div>
@@ -49,7 +49,7 @@
                 <th>Código</th>
                 <th>Nombre</th>
                 <th>Tipo de CP</th>
-                ${isAdmin ? '<th>Coordinador</th>' : ''}
+                ${isAdmin ? '<th>Responsable</th>' : ''}
                 <th>Estado</th>
               </tr>
             </thead>
@@ -137,7 +137,7 @@
         <td><code>${row.codigo || ''}</code></td>
         <td>${row.nombre || ''}</td>
         <td>${row.tipo_cp || ''}</td>
-        ${isAdmin ? `<td>${row.coordinador_nombre || '<span class="text-muted">Sin coordinador</span>'}</td>` : ''}
+        ${isAdmin ? `<td>${row.coordinador_nombre || '<span class="text-muted">Sin responsable</span>'}</td>` : ''}
         <td>${row.estado ? UI.estadoChip(row.estado) : '<span class="text-muted">Sin estado</span>'}</td>
       </tr>
     `).join(''));

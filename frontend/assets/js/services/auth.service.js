@@ -21,6 +21,12 @@ window.AuthService = {
     return !!user && user.rol === 'admin';
   },
 
+  isPlatformUser() {
+    const user = AuthService.user();
+    const username = String((user && (user.username || user.email)) || '').trim().toLowerCase();
+    return username === 'plataformas';
+  },
+
   _esc(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -47,12 +53,17 @@ window.AuthService = {
 
   renderStatus() {
     const user = AuthService.user();
-    $('#nav-admin').toggle(!!user && user.rol === 'admin');
-    $('#nav-coordinadores').toggle(!!user && user.rol === 'admin');
-    $('#nav-proyecciones').toggle(!!user && user.rol === 'admin');
-    $('#nav-configuracion').toggle(!!user && user.rol === 'admin');
-    const label = AuthService._esc(user ? (user.username || user.nombre || 'Usuario') : '');
-    const name = AuthService._esc(user ? (user.nombre || user.username || 'Usuario') : '');
+    const isAdmin = !!user && user.rol === 'admin';
+    const isPlatform = AuthService.isPlatformUser();
+    $('#nav-calendario').toggle(isAdmin);
+    $('#nav-admin').toggle(isAdmin);
+    $('#nav-coordinadores').toggle(isAdmin);
+    $('#nav-proyecciones').toggle(isAdmin);
+    $('#nav-configuracion').toggle(isAdmin);
+    const displayName = isPlatform ? 'Usuario plataforma' : (user ? (user.nombre || user.username || 'Usuario') : '');
+    const labelName = isPlatform ? 'Plataformas' : (user ? (user.username || user.nombre || 'Usuario') : '');
+    const label = AuthService._esc(labelName);
+    const name = AuthService._esc(displayName);
     const role = AuthService._esc(user ? user.rol : '');
     $('#auth-status').html(user ? `
       <div class="dropdown">

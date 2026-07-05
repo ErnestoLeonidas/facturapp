@@ -2,11 +2,7 @@ const r = require('express').Router();
 const db = require('../db-async');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
-
-function coordinadorScope(req) {
-  if (!req.user || req.user.rol === 'admin') return null;
-  return req.user.coordinador_id || '__none__';
-}
+const { coordinadorScope } = require('../services/access');
 
 function parsePayload(row) {
   return { ...row, payload_base: row.payload_base ? JSON.parse(row.payload_base) : null };
@@ -50,7 +46,7 @@ r.post('/', async (req, res, next) => {
     const { cliente_id, nombre, dia_emision, frecuencia, mes_inicio } = req.body;
     const payload_base = { ...(req.body.payload_base || {}) };
     const coordinatorId = coordinadorScope(req);
-    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene responsable asociado', null, 403);
     if (coordinatorId) payload_base.coordinador_id = coordinatorId;
     if (!cliente_id || !nombre) return fail(res, 'VALIDATION_ERROR', 'cliente_id y nombre son requeridos');
     const id = uuidv4();
@@ -77,7 +73,7 @@ r.patch('/:id', async (req, res, next) => {
     if (!row) return notFound(res);
     const coordinatorId = coordinadorScope(req);
     const currentPayload = row.payload_base ? JSON.parse(row.payload_base) : {};
-    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene responsable asociado', null, 403);
     if (coordinatorId && currentPayload.coordinador_id !== coordinatorId) return notFound(res);
     const { nombre, dia_emision, frecuencia, mes_inicio, activa, payload_base } = req.body;
     const sets = ['updated_at=?']; const vals = [db.nowText()];
@@ -106,7 +102,7 @@ r.post('/:id/generar', async (req, res, next) => {
     const prog = await db.get('SELECT * FROM solicitud_programada WHERE id=?', [req.params.id]);
     if (!prog) return notFound(res);
     const coordinatorId = coordinadorScope(req);
-    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene responsable asociado', null, 403);
     const periodo = req.query.periodo || req.body.periodo;
     if (!periodo || !/^\d{4}-\d{2}$/.test(periodo)) return fail(res, 'VALIDATION_ERROR', 'periodo debe ser YYYY-MM');
 

@@ -5,7 +5,7 @@ window.ClientesView = {
       <div class="card mb-3"><div class="card-body py-2">
         <div class="row g-2 align-items-center">
           <div class="col">
-            <input class="form-control form-control-sm" id="cli-q" placeholder="Buscar por cliente, RUT o coordinador" autocomplete="off">
+            <input class="form-control form-control-sm" id="cli-q" placeholder="Buscar por cliente, RUT o responsable" autocomplete="off">
           </div>
           <div class="col-auto">
             <button class="btn btn-sm btn-primary" id="cli-nuevo" type="button">+</button>
@@ -17,7 +17,7 @@ window.ClientesView = {
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
               <th>Cliente</th><th>RUT</th>
-              <th>Coordinador</th><th>Estado</th><th></th>
+              <th>Responsable</th><th>Estado</th><th></th>
             </tr></thead>
             <tbody id="tbl-clientes"><tr><td colspan="5" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
@@ -104,7 +104,7 @@ window.ClientesView = {
                 <p><strong>Giro:</strong> ${c.giro||'—'}</p>
                 <p><strong>Dirección:</strong> ${c.direccion||'—'}</p>
                 <p><strong>Requiere HES:</strong> ${c.requiere_hes?'<span class="badge bg-warning text-dark">Sí</span>':'No'}</p>
-                <p><strong>Coordinador base:</strong> ${c.coordinador?c.coordinador.nombre:'—'}</p>
+                <p><strong>Responsable base:</strong> ${c.coordinador?c.coordinador.nombre:'—'}</p>
                 <p><strong>Estado:</strong> <span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></p>
                 ${c.notas?`<p><strong>Notas:</strong> ${c.notas}</p>`:''}
               </div>
@@ -133,15 +133,15 @@ window.ClientesView = {
           <div class="col-md-7">
             <div class="card mb-3">
               <div class="card-header d-flex justify-content-between">
-                Coordinadores
-                <button class="btn btn-sm btn-outline-primary" id="btn-add-coord-cli">+ Coordinador</button>
+                Responsables
+                <button class="btn btn-sm btn-outline-primary" id="btn-add-coord-cli">+ Responsable</button>
               </div>
               <ul class="list-group list-group-flush" id="lst-coord-cli">
                 ${(c.coordinadores||[]).map(a => `
                   <li class="list-group-item d-flex justify-content-between align-items-center">
                     <span>${a.nombre}<br><small class="text-muted">${a.cp_nombre || 'General del cliente'}</small></span>
                     <button class="btn btn-sm btn-outline-danger" data-delete-coord-cli="${a.id}">Eliminar</button>
-                  </li>`).join('') || '<li class="list-group-item text-muted">Sin coordinadores asignados</li>'}
+                  </li>`).join('') || '<li class="list-group-item text-muted">Sin responsables asignados</li>'}
               </ul>
             </div>
             <div class="card mb-3">
@@ -239,8 +239,8 @@ window.ClientesView = {
       $('[data-delete-coord-cli]').on('click', function() {
         const asignacionId = $(this).data('delete-coord-cli');
         ClientesService.deleteCoordinador(c.id, asignacionId)
-          .then(() => { UI.toast('Coordinador quitado', 'success'); ClientesView.detalle(params); })
-          .fail(e => UI.toast(e.message || 'Error al quitar coordinador', 'danger'));
+          .then(() => { UI.toast('Responsable quitado', 'success'); ClientesView.detalle(params); })
+          .fail(e => UI.toast(e.message || 'Error al quitar responsable', 'danger'));
       });
 
       $('#btn-add-cp').on('click', () => ClientesView._abrirModalCP(params, c, null));
@@ -265,12 +265,12 @@ window.ClientesView = {
   _abrirModalCoordinadorCliente(params, cliente) {
     const $modal = $(`<div class="modal fade" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
       <div class="modal-header">
-        <h5>Asignar coordinador</h5>
+        <h5>Asignar responsable</h5>
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="mb-3">
-          <label class="form-label">Coordinador *</label>
+          <label class="form-label">Responsable *</label>
           <select class="form-select" name="coord_id"><option value="">Seleccionar</option></select>
         </div>
         <div>
@@ -304,9 +304,9 @@ window.ClientesView = {
       };
       ClientesService.addCoordinador(cliente.id, payload).then(() => {
         modal.hide();
-        UI.toast('Coordinador asignado', 'success');
+        UI.toast('Responsable asignado', 'success');
         ClientesView.detalle(params);
-      }).fail(e => UI.toast(e.message || 'Error al asignar coordinador', 'danger'));
+      }).fail(e => UI.toast(e.message || 'Error al asignar responsable', 'danger'));
     });
     $modal.on('hidden.bs.modal', () => $modal.remove());
   },
@@ -420,9 +420,9 @@ window.ClientesView = {
           </select>
         </div>
         <div class="col-md-6">
-          <label class="form-label">Coordinador</label>
+          <label class="form-label">Responsable</label>
           <select class="form-select" name="coordinador_id">
-            <option value="">Seleccionar Coordinador</option>
+            <option value="">Seleccionar responsable</option>
           </select>
         </div>
         <div class="col-12">
@@ -443,7 +443,7 @@ window.ClientesView = {
         .join('');
       $(target).find('[name=coordinador_id]').append(options);
     }).fail(() => {
-      $(target).find('[name=coordinador_id]').append('<option value="" disabled>No se pudieron cargar coordinadores</option>');
+      $(target).find('[name=coordinador_id]').append('<option value="" disabled>No se pudieron cargar responsables</option>');
     });
   },
 

@@ -179,9 +179,9 @@ r.post('/:id/coordinadores', async (req, res, next) => {
     if (!row) return notFound(res);
     const { coordinador_id, cp_id } = req.body;
     const cpNombre = String(req.body.cp_nombre || '').trim() || null;
-    if (!coordinador_id) return fail(res, 'VALIDATION_ERROR', 'coordinador_id es requerido');
+    if (!coordinador_id) return fail(res, 'VALIDATION_ERROR', 'responsable es requerido');
     const coord = await db.get('SELECT id FROM coordinador WHERE id = ? AND activo = 1', [coordinador_id]);
-    if (!coord) return fail(res, 'VALIDATION_ERROR', 'Coordinador no existe o esta inactivo');
+    if (!coord) return fail(res, 'VALIDATION_ERROR', 'Responsable no existe o esta inactivo');
     if (cpNombre) {
       const cp = await db.get('SELECT id FROM cp WHERE cliente_id = ? AND nombre = ? AND activo = 1 LIMIT 1', [req.params.id, cpNombre]);
       if (!cp) return fail(res, 'VALIDATION_ERROR', 'Nombre de CP no pertenece al cliente');

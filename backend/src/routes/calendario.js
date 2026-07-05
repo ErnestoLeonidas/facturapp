@@ -1,6 +1,7 @@
 const r = require('express').Router();
 const db = require('../db-async');
 const { ok, fail } = require('../middleware/envelope');
+const { coordinadorScope } = require('../services/access');
 
 const MESES = [
   'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
@@ -41,11 +42,6 @@ function resumenPorMes(rows) {
       clientes: clientes.size
     };
   });
-}
-
-function coordinadorScope(req) {
-  if (!req.user || req.user.rol === 'admin') return null;
-  return req.user.coordinador_id || '__none__';
 }
 
 r.get('/', async (req, res, next) => {

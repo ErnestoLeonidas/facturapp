@@ -12,13 +12,16 @@
     "db:clean-clientes": "node src/db-clean-clients.js",
     "db:normalize-names": "node src/db-normalize-names.js",
     "db:restore": "node src/db-restore.js",
+    "admin:test:ensure": "node src/ensure-test-admin.js",
+    "ensure:platform-users": "node src/ensure-platform-users.js",
     "prod:check": "node src/prod-check.js",
     "migrate": "node src/migrate.js",
     "migrate:data:sqlite-to-postgres": "node src/migrate-data-sqlite-to-postgres.js",
     "repair:user-coordinador-links": "node src/repair-user-coordinador-links.js",
     "rotate:passwords": "node src/rotate-passwords.js",
     "seed": "node src/seed.js",
-    "import:proyecciones-uf": "node src/import-proyecciones-uf.js"
+    "import:proyecciones-uf": "node src/import-proyecciones-uf.js",
+    "backfill:rds-from-source": "node src/backfill-rds-from-source.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
