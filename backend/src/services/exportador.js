@@ -215,8 +215,11 @@ async function generarSolicitudXLSX(solicitudId) {
   setValue(ws, 'C10', datosFacturacion ? datosFacturacion.giro || '' : '');
   setValue(ws, 'C11', datosFacturacion ? datosFacturacion.direccion || '' : '');
   if (esHabitat(cliente)) {
-    setValue(ws, 'B12', 'N° Contrato');
-    setValue(ws, 'C12', sf.contrato_numero || sf.oc_numero || '');
+    setValue(ws, 'B12', 'OC / N° Contrato');
+    setValue(ws, 'C12', [
+      sf.oc_numero ? `OC: ${sf.oc_numero}` : '',
+      sf.contrato_numero ? `Contrato: ${sf.contrato_numero}` : ''
+    ].filter(Boolean).join(' / '));
   } else {
     setValue(ws, 'B12', 'Orden de Compra/ Nota de Pedido');
     setValue(ws, 'C12', sf.oc_numero || '');

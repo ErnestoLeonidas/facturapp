@@ -26,8 +26,9 @@ window.UI = {
     new bootstrap.Toast($t[0], { delay: 3500 }).show();
   },
 
-  confirm(message, title) {
+  confirm(message, title, okLabel) {
     const id = 'confirm-' + Date.now();
+    const actionLabel = okLabel || 'Eliminar';
     const $modal = $(`
       <div class="modal fade" id="${id}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -39,7 +40,7 @@ window.UI = {
             <div class="modal-body">${message}</div>
             <div class="modal-footer">
               <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
-              <button type="button" class="btn btn-danger" data-confirm-ok>Eliminar</button>
+              <button type="button" class="btn btn-danger" data-confirm-ok>${actionLabel}</button>
             </div>
           </div>
         </div>

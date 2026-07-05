@@ -64,14 +64,14 @@ $(function () {
 
   Router.on('/login',                    () => LoginView.render());
   Router.on('/dashboard',                protectedView(() => DashboardView.render()));
-  Router.on('/solicitudes',              protectedView(() => SolicitudesView.list()));
-  Router.on('/solicitudes/nueva',        protectedView(() => SolicitudesView.nueva()));
+  Router.on('/solicitudes',              protectedView((p) => SolicitudesView.list(p)));
+  Router.on('/solicitudes/nueva',        protectedView((p) => SolicitudesView.nueva(p)));
   Router.on('/solicitudes/:id',          protectedView((p) => SolicitudesView.detalle(p)));
-  Router.on('/calendario',               protectedView((p) => CalendarioView.render(p)));
+  Router.on('/calendario',               adminView((p) => CalendarioView.render(p)));
   Router.on('/historial-uf',             protectedView((p) => HistorialUfView.render(p)));
   Router.on('/clientes',                 protectedView(() => ClientesView.list()));
   Router.on('/clientes/:id',             protectedView((p) => ClientesView.detalle(p)));
-  Router.on('/coordinadores',            protectedView(() => CoordinadoresView.list()));
+  Router.on('/coordinadores',            adminView(() => CoordinadoresView.list()));
   Router.on('/proyecciones',             adminView(() => ProyeccionesView.render()));
   Router.on('/admin',                    adminView(() => AdminView.render()));
   Router.on('/configuracion',            adminView(() => ConfiguracionView.render()));

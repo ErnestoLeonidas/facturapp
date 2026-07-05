@@ -3,6 +3,7 @@ const db = require('../db-async');
 const { v4: uuidv4 } = require('uuid');
 const { ok, fail, notFound } = require('../middleware/envelope');
 const { upperName } = require('../db-normalize-names');
+const { requireRole } = require('../services/auth');
 
 function normalizarNombre(nombre) {
   return String(nombre || '').trim().toLocaleLowerCase('es-CL');
@@ -36,11 +37,11 @@ r.get('/', async (req, res, next) => {
   }
 });
 
-r.post('/', async (req, res, next) => {
+r.post('/', requireRole('admin'), async (req, res, next) => {
   try {
     const { nombre, email, slack_user_id } = req.body;
     if (!nombre) return fail(res, 'VALIDATION_ERROR', 'nombre es requerido');
-    if (await existeDuplicadoNombre(nombre)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un coordinador con ese nombre');
+    if (await existeDuplicadoNombre(nombre)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un responsable con ese nombre');
     const id = uuidv4();
     await db.run('INSERT INTO coordinador (id, nombre, email, slack_user_id) VALUES (?, ?, ?, ?)', [id, upperName(nombre), email || null, slack_user_id || null]);
     ok(res, await db.get('SELECT * FROM coordinador WHERE id = ?', [id]), 201);
@@ -49,7 +50,7 @@ r.post('/', async (req, res, next) => {
   }
 });
 
-r.patch('/:id', async (req, res, next) => {
+r.patch('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const row = await db.get('SELECT id FROM coordinador WHERE id = ?', [req.params.id]);
     if (!row) return notFound(res);
@@ -57,7 +58,7 @@ r.patch('/:id', async (req, res, next) => {
     const sets = []; const vals = [];
     if (nombre !== undefined)        {
       if (!nombre) return fail(res, 'VALIDATION_ERROR', 'nombre es requerido');
-      if (await existeDuplicadoNombre(nombre, req.params.id)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un coordinador con ese nombre');
+      if (await existeDuplicadoNombre(nombre, req.params.id)) return fail(res, 'VALIDATION_ERROR', 'Ya existe un responsable con ese nombre');
       sets.push('nombre=?'); vals.push(upperName(nombre));
     }
     if (email !== undefined)         { sets.push('email=?'); vals.push(email); }
@@ -73,7 +74,7 @@ r.patch('/:id', async (req, res, next) => {
   }
 });
 
-r.delete('/:id', async (req, res, next) => {
+r.delete('/:id', requireRole('admin'), async (req, res, next) => {
   try {
     const row = await db.get('SELECT id FROM coordinador WHERE id = ?', [req.params.id]);
     if (!row) return notFound(res);

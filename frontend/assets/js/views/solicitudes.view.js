@@ -1,61 +1,78 @@
 window.SolicitudesView = {
-  list() {
+  list(initialParams = {}) {
     UI.setTitle('Solicitudes');
+    const isPlatform = SolicitudesView._isPlatformUser();
     const periodoActual = SolicitudesView._periodoActual();
-    const [anioActual, mesActual] = periodoActual.split('-');
-    $('#view-root').html(`
-      <div class="card mb-3"><div class="card-body py-2">
-        <form class="row g-2" id="form-filtros">
-          <div class="col-md-3"><input class="form-control form-control-sm" name="q" placeholder="Cliente, glosa…"></div>
-          <div class="col-md-2">
-            <select class="form-select form-select-sm" name="clienteId" id="filtro-cliente">
-              <option value="">Cliente</option>
-            </select>
-          </div>
+    const periodoInicial = initialParams.periodo || (!initialParams.q && !initialParams.clienteId && !initialParams.estado ? periodoActual : '');
+    const [anioActual, mesActual] = periodoInicial ? periodoInicial.split('-') : ['', ''];
+    const initialQ = SolicitudesView._esc(initialParams.q || '');
+    const estadoFiltro = isPlatform ? '' : `
           <div class="col-md-2">
             <select class="form-select form-select-sm" name="estado">
               <option value="">Estado</option>
               ${(AppConfig.estadosProyecciones || []).map(e=>`<option>${e}</option>`).join('')}
             </select>
+          </div>`;
+    const estadoHeader = isPlatform ? '' : '<th>Estado</th>';
+    const estadoColspan = isPlatform ? 8 : 9;
+    $('#view-root').html(`
+      <div class="card mb-3"><div class="card-body py-2">
+        <form class="row g-2" id="form-filtros">
+          <div class="col-md-3"><input class="form-control form-control-sm" name="q" placeholder="Buscar por cliente, folio u OC" value="${initialQ}"></div>
+          <div class="col-md-2">
+            <select class="form-select form-select-sm" name="clienteId" id="filtro-cliente">
+              <option value="">Cliente</option>
+            </select>
           </div>
+          ${estadoFiltro}
           <div class="col-md-2">
             <select class="form-select form-select-sm" name="mes">
+              <option value="" ${!mesActual ? 'selected' : ''}>Todos</option>
               ${SolicitudesView._meses.map((nombre, i) => `<option value="${String(i + 1).padStart(2, '0')}" ${String(i + 1).padStart(2, '0') === mesActual ? 'selected' : ''}>${nombre}</option>`).join('')}
             </select>
           </div>
           <div class="col-md-1">
             <select class="form-select form-select-sm" name="anio">
+              <option value="" ${!anioActual ? 'selected' : ''}>Todos</option>
               <option value="2026" ${anioActual === '2026' ? 'selected' : ''}>2026</option>
             </select>
           </div>
           <div class="col-md-2 d-flex gap-1">
             <button class="btn btn-sm btn-outline-primary flex-grow-1" type="submit">Filtrar</button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="btn-limpiar-filtros">Limpiar filtros</button>
           </div>
         </form>
       </div></div>
       <div class="card">
-        <div class="table-responsive">
+        <div class="table-responsive solicitudes-table-wrap d-none d-md-block">
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
               <th>Cliente</th><th>Período</th>
-              <th>Empresa</th><th>Coordinador</th><th class="text-end">UF</th><th class="text-end">Neto</th><th class="text-end">Total</th>
-              <th>Estado</th><th></th>
+              <th>Empresa</th><th>Responsable</th><th class="text-end">UF</th><th class="text-end">Neto</th><th class="text-end">Total</th>
+              ${estadoHeader}<th></th>
             </tr></thead>
-            <tbody id="tbl-solicitudes"><tr><td colspan="9" class="text-center py-4">
+            <tbody id="tbl-solicitudes"><tr><td colspan="${estadoColspan}" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
+        </div>
+        <div id="solicitudes-mobile-list" class="solicitudes-mobile-list d-md-none">
+          <div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></div>
         </div>
       </div>
     `);
 
     let filtrosActuales = {};
     const cargar = (params = {}) => {
-      params = { periodo: periodoActual, ...params };
-      if (!params.periodo) params.periodo = periodoActual;
+      params = { ...params };
+      if (isPlatform) delete params.estado;
+      if (!params.periodo && !params.q && !params.clienteId && !params.estado) params.periodo = periodoActual;
       filtrosActuales = params;
       SolicitudesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-solicitudes').html('<tr><td colspan="9" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) {
+          SolicitudesView._renderSinResultados();
+          return;
+        }
         $('#tbl-solicitudes').html(data.map(s => {
           const empresa = SolicitudesView._empresaNombre(s.empresa_emisora || (s.empresa && s.empresa.codigo));
           return `<tr style="cursor:pointer" data-solicitud-id="${s.id}">
@@ -66,23 +83,26 @@ window.SolicitudesView = {
             <td class="text-end"><small>${SolicitudesView._formatUFLista(s.monto_uf)}</small></td>
             <td class="text-end"><small>${Format.clp(s.monto_neto_clp)}</small></td>
             <td class="text-end">${Format.clp(s.monto_total_clp)}</td>
-            <td>${UI.estadoChip(s.estado)}</td>
+            ${isPlatform ? '' : `<td>${UI.estadoChip(s.estado)}</td>`}
             <td>
               <button class="btn btn-sm btn-outline-secondary" data-open-id="${s.id}" type="button">Ver</button>
               <button class="btn btn-sm btn-outline-danger ms-1" data-delete-id="${s.id}" type="button">
-                <i class="bi bi-trash"></i> Eliminar
+                <i class="bi bi-trash"></i> ${isPlatform ? 'Descartar' : 'Eliminar'}
               </button>
             </td>
           </tr>`;
         }).join(''));
+        $('#solicitudes-mobile-list').html(data.map(s => SolicitudesView._renderSolicitudCard(s)).join(''));
       }).fail(e => UI.error('#tbl-solicitudes', e));
     };
 
     ClientesService.list({ estado: 'Activo' }).then(clientes => {
-      $('#filtro-cliente').append(clientes.map(c => `<option value="${c.id}">${c.nombre_corto}</option>`).join(''));
+      $('#filtro-cliente').append(clientes.map(c => `<option value="${c.id}" ${c.id === initialParams.clienteId ? 'selected' : ''}>${c.nombre_corto}</option>`).join(''));
     });
 
-    cargar();
+    $('[name=estado]').val(initialParams.estado || '');
+
+    cargar(initialParams);
     $('#form-filtros').on('submit', e => {
       e.preventDefault();
       const d = Object.fromEntries(new FormData(e.target).entries());
@@ -90,8 +110,23 @@ window.SolicitudesView = {
       delete d.anio;
       delete d.mes;
       Object.keys(d).forEach(k => !d[k] && delete d[k]);
-      if (!d.periodo) d.periodo = periodoActual;
       cargar(d);
+    });
+
+    $('#btn-limpiar-filtros').on('click', () => {
+      if (location.hash !== '#/solicitudes') location.hash = '#/solicitudes';
+      else {
+        $('#form-filtros')[0].reset();
+        cargar({});
+      }
+    });
+
+    $('#view-root').on('click', '[data-clear-solicitudes-search]', () => {
+      if (location.hash !== '#/solicitudes') location.hash = '#/solicitudes';
+      else {
+        $('#form-filtros')[0].reset();
+        cargar({});
+      }
     });
 
     $('#tbl-solicitudes').on('click', '[data-open-id]', function(e) {
@@ -121,7 +156,49 @@ window.SolicitudesView = {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   },
 
+  _isPlatformUser() {
+    return !!(AuthService.isPlatformUser && AuthService.isPlatformUser());
+  },
+
   _meses: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
+
+  _renderSinResultados() {
+    const isPlatform = SolicitudesView._isPlatformUser();
+    const empty = `
+      <div class="text-center text-muted py-4">
+        <strong class="d-block mb-1">No encontramos solicitudes con esos filtros</strong>
+        <span class="d-block mb-3">Prueba con otro cliente, folio, OC${isPlatform ? '' : ', estado'} o periodo.</span>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-solicitudes-search>Limpiar busqueda</button>
+      </div>
+    `;
+    $('#tbl-solicitudes').html(`<tr><td colspan="${isPlatform ? 8 : 9}">${empty}</td></tr>`);
+    $('#solicitudes-mobile-list').html(empty);
+  },
+
+  _renderSolicitudCard(s) {
+    const empresa = SolicitudesView._empresaNombre(s.empresa_emisora || (s.empresa && s.empresa.codigo));
+    const estado = SolicitudesView._isPlatformUser() ? '' : UI.estadoChip(s.estado);
+    return `
+      <article class="solicitud-mobile-card" data-solicitud-id="${SolicitudesView._esc(s.id)}">
+        <div class="d-flex justify-content-between gap-2">
+          <div class="min-w-0">
+            <strong>${SolicitudesView._esc(s.folio || 'Sin folio')}</strong>
+            <span class="d-block">${SolicitudesView._esc(s.cliente_nombre || 'Sin cliente')}</span>
+          </div>
+          ${estado}
+        </div>
+        <div class="solicitud-mobile-meta">
+          <span>${SolicitudesView._esc(s.periodo || '')}</span>
+          <span>${SolicitudesView._esc(empresa || '')}</span>
+          <span>${SolicitudesView._esc(s.coordinador_nombre || 'Sin responsable')}</span>
+        </div>
+        <div class="d-flex justify-content-between align-items-center gap-2 mt-2">
+          <strong>${Format.clp(s.monto_total_clp)}</strong>
+          <a class="btn btn-sm btn-outline-primary" href="#/solicitudes/${encodeURIComponent(s.id)}">Ver</a>
+        </div>
+      </article>
+    `;
+  },
 
   _formatUFLista(valor) {
     const uf = Number(valor) || 0;
@@ -142,8 +219,49 @@ window.SolicitudesView = {
 
   nueva(params = {}) {
     UI.setTitle('Nueva solicitud de factura');
+    if (params.duplicar) {
+      UI.loading();
+      SolicitudesService.get(params.duplicar).then(s => {
+        SolicitudesView._renderFormView(null, SolicitudesView._buildDuplicateDraft(s));
+      }).fail(e => UI.error('#view-root', e));
+      return;
+    }
     const clienteIdPrefill = params.clienteId || '';
     SolicitudesView._renderFormView(null, { cliente_id: clienteIdPrefill });
+  },
+
+  _buildDuplicateDraft(s) {
+    const draft = {
+      ...s,
+      id: null,
+      folio: null,
+      estado: 'PENDIENTE OC / HES',
+      fecha_solicitud: SolicitudesView._hoyISO(),
+      cliente_id: s.cliente_id || (s.cliente && s.cliente.id) || '',
+      cliente_nombre: (s.cliente && s.cliente.nombre_corto) || s.cliente_nombre || '',
+      cliente: s.cliente || null,
+      coordinador_id: s.coordinador_id || (s.coordinador && s.coordinador.id) || '',
+      cps: (s.cps || []).map(cp => ({
+        ...cp,
+        id: null,
+        solicitud_id: null,
+        cp_id: cp.cp_id || cp.id || null,
+        cp_codigo: cp.cp_codigo || cp.codigo || '',
+        cp_nombre: cp.cp_nombre || cp.nombre || '',
+        monto_uf: cp.monto_uf,
+        monto_clp: cp.monto_clp,
+        monto_clp_manual: cp.monto_clp_manual,
+        monto_clp_es_manual: cp.monto_clp_es_manual
+      })),
+      receptores: (s.receptores || []).map(r => ({ ...r })),
+      historial: [],
+      _duplicado_desde: s.id
+    };
+    delete draft.id;
+    delete draft.folio;
+    delete draft.created_at;
+    delete draft.updated_at;
+    return draft;
   },
 
   detalle(params) {
@@ -155,13 +273,28 @@ window.SolicitudesView = {
 
   _renderFormView(sol, prefill) {
     const isNew = !sol;
+    const isPlatform = SolicitudesView._isPlatformUser();
+    prefill = { ...(prefill || {}) };
+    if (isNew && isPlatform && !prefill.periodo) prefill.periodo = SolicitudesView._periodoActual();
     const readonly = sol && !['PENDIENTE OC / HES','FACTURA SOLICITADA','Borrador','PendienteDatos'].includes(SolicitudesView._estadoSolicitudVisible(sol.estado));
     UI.setTitle(isNew ? 'Nueva solicitud' : 'Solicitudes');
 
     const estadoActual = SolicitudesView._estadoSolicitudVisible(prefill.estado || 'PENDIENTE OC / HES');
-    const cpEditable = !readonly || SolicitudesView._esPendienteOcHes(estadoActual);
     const estadoOpts = (AppConfig.estadosProyecciones || AppConfig.estadosSolicitud).map(e =>
       `<option value="${e}" ${estadoActual===e?'selected':''}>${e}</option>`).join('');
+    const estadoField = isPlatform
+      ? `<input type="hidden" name="estado" value="${SolicitudesView._esc(estadoActual)}">`
+      : `<div class="col-md-3">
+                  <label class="form-label">Estado *</label>
+                  <select class="form-select" name="estado" ${readonly?'disabled':''}>${estadoOpts}</select>
+                </div>`;
+    const estadoBadge = sol && !isPlatform ? ` &nbsp; ${UI.estadoChip(sol.estado)}` : '';
+    const temporalStatus = isPlatform && !readonly ? `
+                <div class="autosave-status is-idle" id="autosave-status" aria-live="polite">
+                  <span class="autosave-dot"></span>
+                  <span>Solicitud temporal. Se guardara al exportar Excel.</span>
+                </div>` : '';
+    const cpEditable = !readonly || SolicitudesView._esPendienteOcHes(estadoActual);
     const ufFecha = prefill.uf_fecha || SolicitudesView._hoyISO();
     const areaPlataforma = /plataforma/i.test(prefill.area || '');
     const hesValor = prefill.hes_numero || 'N/A';
@@ -171,32 +304,65 @@ window.SolicitudesView = {
     const empresaOpts = (AppConfig.empresasEmisoras || []).map(e =>
       `<option value="${e.codigo}" ${empresaActual === e.codigo ? 'selected' : ''}>${e.nombre}</option>`
     ).join('');
+    const clienteActualId = prefill.cliente_id || (prefill.cliente && prefill.cliente.id) || '';
+    const clienteNombre = (prefill.cliente && prefill.cliente.nombre_corto) || prefill.cliente_nombre || '';
+    const clienteField = isPlatform
+      ? `<div class="col-md-6">
+                  <label class="form-label">Cliente *</label>
+                  <div class="cliente-autocomplete">
+                    <div class="input-group">
+                      <input class="form-control" id="cliente-autocomplete-input" autocomplete="off" placeholder="Escribe nombre, razon social o RUT" value="${SolicitudesView._esc(clienteNombre)}" ${readonly?'readonly':''}>
+                      <button class="btn btn-outline-secondary" type="button" id="btn-clear-cliente" title="Limpiar cliente" ${readonly?'disabled':''}>
+                        <i class="bi bi-x-lg"></i>
+                      </button>
+                    </div>
+                    <input type="hidden" name="cliente_id" id="sel-cliente" value="${SolicitudesView._esc(clienteActualId)}">
+                    <div class="cliente-suggestions d-none" id="cliente-suggestions"></div>
+                  </div>
+                  <div class="invalid-feedback d-block" data-error-for="cliente_id"></div>
+                </div>`
+      : `<div class="col-md-6">
+                  <label class="form-label">Cliente *</label>
+                  <select class="form-select" name="cliente_id" id="sel-cliente" ${readonly?'disabled':''}>
+                    <option value="">seleccionar</option>
+                  </select>
+                  <div class="invalid-feedback" data-error-for="cliente_id"></div>
+                </div>`;
+    const areaField = isPlatform
+      ? '<input type="hidden" name="area_plataforma" value="1">'
+      : `<div class="col-md-6">
+                  <label class="form-label">Ãrea</label>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="area_plataforma" id="area-plataforma" ${areaPlataforma?'checked':''} ${readonly?'disabled':''}>
+                    <label class="form-check-label" for="area-plataforma">Plataforma</label>
+                  </div>
+                </div>`;
+    const ufButton = isPlatform ? '' : '<button type="button" class="btn btn-sm btn-outline-secondary" id="btn-uf">Buscar UF</button>';
 
     $('#view-root').html(`
       <div class="row g-3">
         <div class="col-lg-8">
           <div class="card">
             <div class="card-header"><strong>Solicitud de Factura</strong>
-              ${sol ? ` &nbsp; ${UI.estadoChip(sol.estado)}` : ''}
+              ${estadoBadge}
             </div>
             <div class="card-body">
+              <div class="alert alert-warning d-none" id="solicitud-errors"></div>
+              ${temporalStatus}
+              <h5 class="solicitud-section-title">Datos principales</h5>
               <div class="row g-3">
                 <div class="col-md-3">
                   <label class="form-label">Período *</label>
                   <input class="form-control" name="periodo" placeholder="2026-05" value="${prefill.periodo||''}" ${readonly?'readonly':''}>
+                  <div class="invalid-feedback" data-error-for="periodo"></div>
                 </div>
 
-                <div class="col-md-3">
-                  <label class="form-label">Estado *</label>
-                  <select class="form-select" name="estado" ${readonly?'disabled':''}>${estadoOpts}</select>
-                </div>
+                ${estadoField}
 
-                <div class="col-md-6">
-                  <label class="form-label">Cliente *</label>
-                  <select class="form-select" name="cliente_id" id="sel-cliente" ${readonly?'disabled':''}>
+                ${clienteField}
+                <!-- legacy cliente select removed
                     <option value="">— seleccionar —</option>
-                  </select>
-                </div>
+                -->
                 <div class="col-md-6">
                   <label class="form-label">Razón social *</label>
                   <select class="form-select" name="cliente_facturacion_id" id="sel-cliente-facturacion" ${readonly?'disabled':''}>
@@ -205,18 +371,21 @@ window.SolicitudesView = {
                   <small class="text-muted d-block mt-1" id="cliente-facturacion-preview"></small>
                 </div>
                 <div class="col-md-3">
-                  <label class="form-label">Encargado de Solicitud *</label>
+                  <label class="form-label">Responsable *</label>
                   <select class="form-select" name="coordinador_id" id="sel-coordinador" data-readonly="${readonly ? '1' : '0'}" ${readonly?'disabled':''}>
                     <option value="">seleccionar</option>
                   </select>
+                  <div class="invalid-feedback" data-error-for="coordinador_id"></div>
                 </div>
                 <div class="col-md-3" id="field-oc">
                   <label class="form-label">OC / Nota de Pedido</label>
                   <input class="form-control" name="oc_numero" value="${prefill.oc_numero||''}" ${readonly?'readonly':''}>
+                  ${isPlatform ? '<small class="text-muted d-block mt-1">Puedes dejarlo vacio si aun no lo tienes.</small>' : ''}
                 </div>
                 <div class="col-md-3 d-none" id="field-contrato">
                   <label class="form-label">N° contrato</label>
                   <input class="form-control" name="contrato_numero" value="${prefill.contrato_numero||''}" ${readonly?'readonly':''}>
+                  ${isPlatform ? '<small class="text-muted d-block mt-1">Puedes dejarlo vacio si aun no lo tienes.</small>' : ''}
                 </div>
                 <div class="col-md-3">
                   <div class="d-flex justify-content-between align-items-center">
@@ -227,12 +396,16 @@ window.SolicitudesView = {
                     </div>
                   </div>
                   <input class="form-control" id="hes-numero" name="hes_numero" placeholder="N/A" value="${tieneHes ? hesValor : 'N/A'}" ${(!tieneHes || readonly)?'readonly':''}>
+                  ${isPlatform ? '<small class="text-muted d-block mt-1">Si no aplica o aun no tienes HES, dejalo como N/A.</small>' : ''}
                 </div>
 
                 <div class="col-12">
                   <label class="form-label">Glosa *</label>
                   <textarea class="form-control" name="glosa" rows="2" ${readonly?'readonly':''}>${prefill.glosa||''}</textarea>
+                  <div class="invalid-feedback" data-error-for="glosa"></div>
                 </div>
+                ${areaField}
+                <!-- legacy area selector removed
                 <div class="col-md-6">
                   <label class="form-label">Área</label>
                   <div class="form-check">
@@ -240,9 +413,11 @@ window.SolicitudesView = {
                     <label class="form-check-label" for="area-plataforma">Plataforma</label>
                   </div>
                 </div>
+                -->
               </div>
 
               <hr>
+              <h5 class="solicitud-section-title">Detalle y monto</h5>
 
               <div class="d-flex justify-content-between align-items-center mb-2">
                 <h6 class="mb-0">Centros de Proyecto (CP)</h6>
@@ -253,6 +428,7 @@ window.SolicitudesView = {
                   <thead><tr><th>CP del cliente</th><th class="text-end">Monto UF</th><th class="text-end">Monto CLP</th>${cpEditable?'<th></th>':''}</tr></thead>
                   <tbody id="tbody-cps"></tbody>
                 </table>
+                <div class="invalid-feedback d-block" data-error-for="cps"></div>
                 <small class="text-muted" id="cp-alerta"></small>
               </div>
 
@@ -269,7 +445,7 @@ window.SolicitudesView = {
             </div>
           </div>
 
-          ${sol ? `
+          ${sol && !isPlatform ? `
           <div class="card mt-3">
             <div class="card-header">Historial</div>
             <ul class="list-group list-group-flush">
@@ -309,10 +485,11 @@ window.SolicitudesView = {
                 </div>
                 <div class="col-12 d-flex gap-1">
                   <input class="form-control form-control-sm" name="uf_valor" placeholder="Valor UF" value="${prefill.uf_valor||''}" ${readonly?'readonly':''}>
-                  <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-uf">Buscar UF</button>
+                  ${ufButton}
                 </div>
                 <div class="col-12">
-                  <small class="text-muted" id="uf-cp-help">Al buscar UF se actualiza el Monto CLP del CP activo.</small>
+                  <small class="text-muted" id="uf-cp-help">${isPlatform ? 'La UF se actualiza al cambiar fecha o periodo.' : 'Al buscar UF se actualiza el Monto CLP del CP activo.'}</small>
+                  <div class="invalid-feedback d-block" data-error-for="uf_valor"></div>
                 </div>
               </div>
               <hr>
@@ -329,6 +506,7 @@ window.SolicitudesView = {
                   </td>
                   <td class="text-end align-middle resumen-value">
                     <input class="form-control form-control-sm text-end fw-bold" name="monto_neto_clp_manual" type="number" step="1" value="${netoManual ? prefill.monto_neto_clp_manual : (prefill.monto_neto_clp||0)}" ${(!netoManual || readonly)?'readonly':''}>
+                    <div class="invalid-feedback d-block" data-error-for="monto"></div>
                   </td>
                 </tr>
                 <tr><td>IVA</td><td class="text-end resumen-value" id="resumen-iva">${Format.clp(prefill.monto_iva_clp||0)}</td></tr>
@@ -344,7 +522,7 @@ window.SolicitudesView = {
       </div>
     `);
 
-    // Cargar encargado de solicitud
+    // Cargar responsable de la solicitud
     const $selCoord = $('#sel-coordinador');
     const coordActual = prefill.coordinador_id || (prefill.coordinador && prefill.coordinador.id) || '';
     CoordinadoresService.list().then(coords => {
@@ -352,42 +530,47 @@ window.SolicitudesView = {
       SolicitudesView._allCoordinadores = activos;
       SolicitudesView._renderCoordinadoresSolicitud(coordActual);
     }).fail(() => {
-      $selCoord.append('<option value="" disabled>No se pudieron cargar coordinadores</option>');
+      $selCoord.append('<option value="" disabled>No se pudieron cargar responsables</option>');
     });
 
-    // Cargar clientes en el select
+    // Cargar clientes
     const $selCli = $('#sel-cliente');
     ClientesService.list({ estado: 'Activo' }).then(clientes => {
-      clientes.forEach(c => {
-        const opt = $('<option>').val(c.id).text(c.nombre_corto).data('obj', c);
-        if (c.id === (prefill.cliente_id || (prefill.cliente && prefill.cliente.id))) opt.prop('selected', true);
-        $selCli.append(opt);
-      });
-      // Si tiene cliente precargado, poblar info, receptores y CPs
-      const clienteActual = sol && sol.cliente ? sol.cliente : null;
+      SolicitudesView._clientesCache = clientes || [];
+      if (isPlatform) {
+        SolicitudesView._initClienteAutocomplete();
+      } else {
+        clientes.forEach(c => {
+          const opt = $('<option>').val(c.id).text(c.nombre_corto).data('obj', c);
+          if (c.id === (prefill.cliente_id || (prefill.cliente && prefill.cliente.id))) opt.prop('selected', true);
+          $selCli.append(opt);
+        });
+      }
+      const clienteActual = (prefill && prefill.cliente) || (sol && sol.cliente) || null;
       const selectedId = $selCli.val();
       if (clienteActual) {
-        SolicitudesView._onClienteSeleccionado(clienteActual, sol && sol.receptores, sol && sol.cps);
+        SolicitudesView._onClienteSeleccionado(clienteActual, prefill && prefill.receptores, prefill && prefill.cps, { preserve: true });
       } else if (selectedId) {
-        ClientesService.get(selectedId).then(c => SolicitudesView._onClienteSeleccionado(c, []));
+        ClientesService.get(selectedId).then(c => SolicitudesView._onClienteSeleccionado(c, prefill && prefill.receptores, prefill && prefill.cps, { preserve: !!(prefill && (prefill.cps || prefill.receptores)) }));
       }
     });
 
     $selCli.on('change', function() {
+      if (isPlatform) return;
       const id = $(this).val();
       if (!id) return;
-      ClientesService.get(id).then(c => SolicitudesView._onClienteSeleccionado(c, []));
+      ClientesService.get(id).then(c => SolicitudesView._onClienteSeleccionado(c, [], null, { resetDependientes: true }));
     });
 
     // Estado inicial
     SolicitudesView._state = {
-      sol, readonly, prefill,
-      cps: sol ? sol.cps : [],
-      receptores: sol ? sol.receptores : [],
-      clienteActual: sol ? sol.cliente : null,
+      sol, readonly, prefill, isPlatform,
+      cps: sol ? sol.cps : (prefill.cps || []),
+      receptores: sol ? sol.receptores : (prefill.receptores || []),
+      clienteActual: sol ? sol.cliente : (prefill.cliente || null),
       cpsDisponibles: [],
       coordinadorActual: coordActual,
-      activeCpIndex: (sol && sol.cps && sol.cps.length) ? 0 : null
+      activeCpIndex: ((sol && sol.cps && sol.cps.length) || (prefill.cps && prefill.cps.length)) ? 0 : null
     };
     SolicitudesView._renderCPs();
     SolicitudesView._renderReceptores();
@@ -395,8 +578,10 @@ window.SolicitudesView = {
     SolicitudesView._syncHESField();
     SolicitudesView._syncCPsConNetoManual();
     SolicitudesView._recalcular();
+    SolicitudesView._initAutosave();
 
     // Eventos
+    $('#view-root').on('input change', 'input, select, textarea', () => SolicitudesView._clearFieldErrors());
     $('#hes-tiene').on('change', () => SolicitudesView._syncHESField());
     $('#sel-cliente-facturacion').on('change', () => SolicitudesView._mostrarDatosFacturacionSeleccionados());
     $('[name=empresa_emisora]').on('change', () => SolicitudesView._recalcular());
@@ -419,13 +604,7 @@ window.SolicitudesView = {
     $('#btn-uf').on('click', () => {
       const fecha = $('[name=uf_fecha]').val();
       if (!fecha) return UI.toast('Selecciona una fecha UF', 'warning');
-      IntegracionesService.uf(fecha).then(d => {
-        $('[name=uf_valor]').val(d.valor);
-        SolicitudesView._aplicarUFEnCPActivo();
-        SolicitudesView._actualizarObservacionUF();
-        SolicitudesView._recalcular();
-        UI.toast('UF ' + d.fecha + ': $' + d.valor, 'info');
-      }).fail(e => UI.toast(e.message || 'Error UF', 'danger'));
+      SolicitudesView._consultarUF(fecha, true);
     });
 
     $('#btn-add-cp').on('click', () => {
@@ -435,6 +614,8 @@ window.SolicitudesView = {
       SolicitudesView._state.cps.push({ cp_id: '', cp_codigo: '', monto_uf: 0, monto_clp: 0 });
       SolicitudesView._state.activeCpIndex = SolicitudesView._state.cps.length - 1;
       SolicitudesView._renderCPs();
+      SolicitudesView._markAutosaveTouched();
+      SolicitudesView._scheduleAutosave();
     });
 
     $('#btn-add-rec').on('click', () => {
@@ -448,27 +629,127 @@ window.SolicitudesView = {
         const idx = prompt('Selecciona receptor:\n' + opts);
         if (!idx) return;
         const rec = disponibles[Number(idx)-1];
-        if (rec) { SolicitudesView._state.receptores.push(rec); SolicitudesView._renderReceptores(); }
+        if (rec) {
+          SolicitudesView._state.receptores.push(rec);
+          SolicitudesView._renderReceptores();
+          SolicitudesView._markAutosaveTouched();
+          SolicitudesView._scheduleAutosave();
+        }
       });
     });
 
     $('[name=moneda_base], [name=uf_valor], [name=uf_fecha]').on('change input', () => { SolicitudesView._aplicarUFEnCPActivo(); SolicitudesView._actualizarObservacionUF(); SolicitudesView._renderCPs(); SolicitudesView._recalcular(); });
+    if (isPlatform) {
+      $('[name=uf_fecha]').on('change', function() {
+        SolicitudesView._scheduleUfFetch($(this).val());
+      });
+      $('[name=periodo]').on('change input', function() {
+        const fecha = SolicitudesView._fechaUfDesdePeriodo($(this).val());
+        if (!fecha) return;
+        $('[name=uf_fecha]').val(fecha);
+        SolicitudesView._scheduleUfFetch(fecha);
+      });
+      if (ufFecha && !prefill.uf_valor) SolicitudesView._scheduleUfFetch(ufFecha, 150);
+    }
   },
 
-  _onClienteSeleccionado(c, receptoresActuales, cpsActuales) {
+  _normalizarBusquedaCliente(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  },
+
+  _initClienteAutocomplete() {
+    const $input = $('#cliente-autocomplete-input');
+    const $hidden = $('#sel-cliente');
+    const $clear = $('#btn-clear-cliente');
+    if (!$input.length) return;
+
+    const render = (query) => {
+      const q = SolicitudesView._normalizarBusquedaCliente(query);
+      const $box = $('#cliente-suggestions');
+      if (!q) {
+        $box.addClass('d-none').empty();
+        return;
+      }
+      const rows = (SolicitudesView._clientesCache || []).filter(c => {
+        const haystack = SolicitudesView._normalizarBusquedaCliente([
+          c.nombre_corto,
+          c.razon_social,
+          c.rut
+        ].filter(Boolean).join(' '));
+        return haystack.includes(q);
+      }).slice(0, 8);
+      if (!rows.length) {
+        $box.removeClass('d-none').html('<div class="cliente-suggestion-empty">No encontramos ese cliente</div>');
+        return;
+      }
+      $box.removeClass('d-none').html(rows.map(c => `
+        <button type="button" class="cliente-suggestion" data-cliente-id="${SolicitudesView._esc(c.id)}">
+          <strong>${SolicitudesView._esc(c.nombre_corto || '')}</strong>
+          <span>${SolicitudesView._esc(c.razon_social || '')}</span>
+          <small>${SolicitudesView._esc(c.rut || '')}</small>
+        </button>
+      `).join(''));
+    };
+
+    $input.on('input', function() {
+      $hidden.val('');
+      render($(this).val());
+    });
+    $input.on('focus', function() { render($(this).val()); });
+    $('#cliente-suggestions').on('click', '[data-cliente-id]', function() {
+      const id = $(this).data('cliente-id');
+      const basic = (SolicitudesView._clientesCache || []).find(c => c.id === id);
+      $hidden.val(id);
+      $input.val((basic && basic.nombre_corto) || '');
+      $('#cliente-suggestions').addClass('d-none').empty();
+      ClientesService.get(id).then(c => SolicitudesView._onClienteSeleccionado(c, [], null, { resetDependientes: true }));
+    });
+    $clear.on('click', () => SolicitudesView._limpiarClienteSeleccionado());
+    $(document).off('click.clienteAutocomplete').on('click.clienteAutocomplete', e => {
+      if (!$(e.target).closest('.cliente-autocomplete').length) $('#cliente-suggestions').addClass('d-none');
+    });
+  },
+
+  _limpiarClienteSeleccionado() {
+    $('#cliente-autocomplete-input').val('');
+    $('#sel-cliente').val('');
+    $('#cliente-suggestions').addClass('d-none').empty();
+    $('#cliente-facturacion-preview').text('');
+    $('#sel-cliente-facturacion').empty().append('<option value="">Datos cliente 1</option>');
+    SolicitudesView._state.clienteActual = null;
+    SolicitudesView._state.cps = [];
+    SolicitudesView._state.receptores = [];
+    SolicitudesView._state.cpsDisponibles = [];
+    SolicitudesView._renderCPs();
+    SolicitudesView._renderReceptores();
+    SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
+    SolicitudesView._recalcular();
+  },
+
+  _onClienteSeleccionado(c, receptoresActuales, cpsActuales, options = {}) {
+    const preserve = !!options.preserve;
     SolicitudesView._state.clienteActual = c;
+    $('#sel-cliente').val(c.id || '');
+    if ($('#cliente-autocomplete-input').length) $('#cliente-autocomplete-input').val(c.nombre_corto || '');
     SolicitudesView._toggleContratoHabitat(c);
-    SolicitudesView._renderDatosFacturacionSolicitud((SolicitudesView._state.prefill && SolicitudesView._state.prefill.cliente_facturacion_id) || '');
-    SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val() || c.coordinador_id || '');
-    if (!receptoresActuales || !receptoresActuales.length) {
+    SolicitudesView._renderDatosFacturacionSolicitud(preserve ? ((SolicitudesView._state.prefill && SolicitudesView._state.prefill.cliente_facturacion_id) || '') : '');
+    SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
+    if (preserve && receptoresActuales && receptoresActuales.length) {
+      SolicitudesView._state.receptores = [...receptoresActuales];
+    } else {
       SolicitudesView._state.receptores = [...(c.receptores || [])];
     }
     SolicitudesView._renderReceptores();
     ClientesService.cps(c.id).then(cps => {
       SolicitudesView._state.cpsDisponibles = cps || [];
-      if (!cpsActuales) SolicitudesView._state.cps = [];
+      SolicitudesView._state.cps = (preserve && cpsActuales) ? [...cpsActuales] : [];
       SolicitudesView._renderCPs();
-      SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val() || c.coordinador_id || '');
+      SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
+      SolicitudesView._scheduleAutosave();
     }).fail(e => UI.toast(e.message || 'No se pudieron cargar los CPs del cliente', 'danger'));
     if (c.requiere_hes && String($('[name=hes_numero]').val() || '').trim().toUpperCase() === 'N/A') {
       $('#hes-tiene').prop('checked', true);
@@ -488,9 +769,8 @@ window.SolicitudesView = {
   _toggleContratoHabitat(cliente) {
     const esHabitat = SolicitudesView._esHabitat(cliente);
     $('#field-contrato').toggleClass('d-none', !esHabitat);
-    $('#field-oc').toggleClass('d-none', esHabitat);
-    if (esHabitat) $('[name=oc_numero]').val('');
-    else $('[name=contrato_numero]').val('');
+    $('#field-oc').removeClass('d-none');
+    if (!esHabitat) $('[name=contrato_numero]').val('');
   },
 
   _syncHESField() {
@@ -590,6 +870,8 @@ window.SolicitudesView = {
       }
       SolicitudesView._syncCPsConNetoManual();
       SolicitudesView._recalcular();
+      SolicitudesView._markAutosaveTouched();
+      SolicitudesView._scheduleAutosave();
     });
     SolicitudesView._recalcular();
   },
@@ -598,6 +880,8 @@ window.SolicitudesView = {
     SolicitudesView._state.cps.splice(i, 1);
     SolicitudesView._renderCPs();
     SolicitudesView._checkCPBalance();
+    SolicitudesView._markAutosaveTouched();
+    SolicitudesView._scheduleAutosave();
   },
 
   _renderCoordinadoresSolicitud(selectedId) {
@@ -605,32 +889,12 @@ window.SolicitudesView = {
     if (!$sel.length) return;
     const all = SolicitudesView._allCoordinadores || [];
     const user = AuthService.user && AuthService.user();
-    const coordFijo = user && user.rol !== 'admin' ? user.coordinador_id : null;
-    const state = SolicitudesView._state || {};
-    const cliente = state.clienteActual;
-    const asignaciones = (cliente && cliente.coordinadores) || [];
-    const cpNombresSeleccionados = new Set((state.cps || []).map(cp => {
-      if (cp.cp_nombre) return cp.cp_nombre;
-      const found = (state.cpsDisponibles || []).find(opt => opt.codigo === (cp.cp_codigo || cp.codigo));
-      if (found) return found.nombre;
-      if (cp.cp_id) {
-        const byId = (state.cpsDisponibles || []).find(opt => opt.id === cp.cp_id);
-        return byId && byId.nombre;
-      }
-      return null;
-    }).filter(Boolean));
+    const isPlatform = AuthService.isPlatformUser && AuthService.isPlatformUser();
+    const coordFijo = user && user.rol !== 'admin' && !isPlatform ? user.coordinador_id : null;
 
     let coords = all;
     if (coordFijo) {
       coords = all.filter(c => c.id === coordFijo);
-    } else if (asignaciones.length) {
-      const ids = new Set(asignaciones
-        .filter(a => !a.cp_nombre || !cpNombresSeleccionados.size || cpNombresSeleccionados.has(a.cp_nombre))
-        .map(a => a.coordinador_id));
-      coords = all.filter(c => ids.has(c.id));
-      if (!coords.length) coords = all.filter(c => asignaciones.some(a => a.coordinador_id === c.id));
-    } else if (cliente && cliente.coordinador_id) {
-      coords = all.filter(c => c.id === cliente.coordinador_id);
     }
 
     const actual = coordFijo || selectedId || $sel.val() || '';
@@ -752,7 +1016,12 @@ window.SolicitudesView = {
       </li>`).join(''));
   },
 
-  _removeRec(i) { SolicitudesView._state.receptores.splice(i, 1); SolicitudesView._renderReceptores(); },
+  _removeRec(i) {
+    SolicitudesView._state.receptores.splice(i, 1);
+    SolicitudesView._renderReceptores();
+    SolicitudesView._markAutosaveTouched();
+    SolicitudesView._scheduleAutosave();
+  },
 
   _recalcular() {
     const { cps } = SolicitudesView._state;
@@ -778,14 +1047,194 @@ window.SolicitudesView = {
     return $('#resumen-neto-manual').is(':checked');
   },
 
+  _clearFieldErrors() {
+    $('#solicitud-errors').addClass('d-none').empty();
+    $('#view-root .is-invalid').removeClass('is-invalid');
+    $('#view-root [data-error-for]').text('');
+    $('#div-cps').removeClass('is-invalid');
+  },
+
+  _setFieldError(field, message) {
+    const selectors = {
+      cliente_id: '#sel-cliente',
+      coordinador_id: '#sel-coordinador',
+      periodo: '[name=periodo]',
+      glosa: '[name=glosa]',
+      uf_valor: '[name=uf_valor]',
+      monto: '[name=monto_neto_clp_manual]',
+      cps: '#div-cps'
+    };
+    const selector = selectors[field];
+    if (selector) $(selector).addClass('is-invalid');
+    $(`[data-error-for="${field}"]`).text(message);
+  },
+
+  _validarFormularioBasico(payload) {
+    SolicitudesView._clearFieldErrors();
+    const errores = [];
+    const add = (field, message) => {
+      errores.push(message);
+      SolicitudesView._setFieldError(field, message);
+    };
+
+    if (!payload.cliente_id) add('cliente_id', 'Selecciona un cliente.');
+    if (!payload.coordinador_id) add('coordinador_id', 'Selecciona un responsable.');
+    if (!payload.periodo) add('periodo', 'Ingresa el periodo de facturacion.');
+    if (!payload.glosa) add('glosa', 'Ingresa una glosa para la solicitud.');
+    if (!payload.cps || !payload.cps.length) {
+      add('cps', 'Agrega al menos un CP.');
+    } else {
+      const tieneMonto = payload.cps.some(cp => (Number(cp.monto_uf) || 0) > 0 || (Number(cp.monto_clp) || 0) > 0);
+      const requiereUf = payload.cps.some(cp => (Number(cp.monto_uf) || 0) > 0) && !payload.uf_valor;
+      if (!tieneMonto) add('monto', 'Ingresa un monto para el CP.');
+      if (requiereUf) add('uf_valor', 'Busca o ingresa el valor UF para calcular el monto.');
+    }
+
+    if (errores.length) {
+      $('#solicitud-errors')
+        .removeClass('d-none')
+        .html('<strong>Revisa estos campos:</strong><br>' + errores.map(SolicitudesView._esc).join('<br>'));
+      SolicitudesView._scrollToFirstError();
+    }
+    return errores;
+  },
+
+  _scrollToFirstError() {
+    const $first = $('#view-root .is-invalid:first');
+    if ($first.length) $first[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  },
+
+  _initAutosave() {
+    clearTimeout(SolicitudesView._autosaveTimer);
+    SolicitudesView._autosaveTouched = false;
+    SolicitudesView._autosaveSaving = false;
+    SolicitudesView._autosaveQueued = false;
+    SolicitudesView._autosaveLastPayload = '';
+    $('#view-root').off('.autosave');
+
+    const state = SolicitudesView._state || {};
+    if (state.isPlatform) {
+      SolicitudesView._setAutosaveStatus('idle', 'Solicitud temporal. Se guardara al exportar Excel.');
+      return;
+    }
+    if (state.readonly) return;
+
+    $('#view-root').on('input.autosave change.autosave', 'input, select, textarea', function() {
+      SolicitudesView._markAutosaveTouched();
+      SolicitudesView._scheduleAutosave();
+    });
+  },
+
+  _markAutosaveTouched() {
+    SolicitudesView._autosaveTouched = true;
+  },
+
+  _setAutosaveStatus(kind, message) {
+    const $status = $('#autosave-status');
+    if (!$status.length) return;
+    $status
+      .removeClass('is-idle is-saving is-saved is-error')
+      .addClass('is-' + kind)
+      .find('span:last')
+      .text(message);
+  },
+
+  _autosaveReady(payload) {
+    return !!(payload && payload.cliente_id && payload.periodo && payload.empresa_emisora);
+  },
+
+  _scheduleAutosave(delay = 1000) {
+    const state = SolicitudesView._state || {};
+    if (state.isPlatform) {
+      SolicitudesView._setAutosaveStatus('idle', 'Solicitud temporal. Se guardara al exportar Excel.');
+      return;
+    }
+    if (!state.isPlatform || state.readonly || !SolicitudesView._autosaveTouched) return;
+    clearTimeout(SolicitudesView._autosaveTimer);
+
+    const payload = SolicitudesView._collectForm();
+    if (!SolicitudesView._autosaveReady(payload)) {
+      SolicitudesView._setAutosaveStatus('idle', 'Selecciona cliente y periodo para iniciar autoguardado');
+      return;
+    }
+
+    SolicitudesView._setAutosaveStatus('saving', 'Guardando...');
+    SolicitudesView._autosaveTimer = setTimeout(() => SolicitudesView._autosaveNow(), delay);
+  },
+
+  _autosaveNow() {
+    const state = SolicitudesView._state || {};
+    if (state.isPlatform) return;
+    if (!state.isPlatform || state.readonly) return;
+
+    const payload = SolicitudesView._collectForm();
+    if (!SolicitudesView._autosaveReady(payload)) {
+      SolicitudesView._setAutosaveStatus('idle', 'Selecciona cliente y periodo para iniciar autoguardado');
+      return;
+    }
+
+    const serialized = JSON.stringify(payload);
+    if (serialized === SolicitudesView._autosaveLastPayload && state.sol) {
+      SolicitudesView._setAutosaveStatus('saved', 'Cambios guardados');
+      return;
+    }
+
+    if (SolicitudesView._autosaveSaving) {
+      SolicitudesView._autosaveQueued = true;
+      return;
+    }
+
+    SolicitudesView._autosaveSaving = true;
+    SolicitudesView._setAutosaveStatus('saving', 'Guardando...');
+
+    const hadSol = !!state.sol;
+    const req = hadSol
+      ? SolicitudesService.update(state.sol.id, payload)
+      : SolicitudesService.create(payload);
+
+    req.then(s => {
+      if (s) {
+        SolicitudesView._state.sol = s;
+        SolicitudesView._state.prefill = { ...SolicitudesView._state.prefill, ...s };
+        SolicitudesView._autosaveLastPayload = serialized;
+        if (!hadSol && window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', '#/solicitudes/' + encodeURIComponent(s.id));
+        }
+        SolicitudesView._renderBotones();
+      }
+      SolicitudesView._setAutosaveStatus('saved', 'Cambios guardados');
+    }).fail(e => {
+      SolicitudesView._setAutosaveStatus('error', 'Error al guardar');
+      UI.toast((e && e.message) || 'Error al guardar cambios', 'danger');
+    }).always(() => {
+      SolicitudesView._autosaveSaving = false;
+      if (SolicitudesView._autosaveQueued) {
+        SolicitudesView._autosaveQueued = false;
+        SolicitudesView._scheduleAutosave(300);
+      }
+    });
+  },
+
   _renderBotones() {
     const { sol, readonly } = SolicitudesView._state;
     const estado = sol ? SolicitudesView._estadoSolicitudVisible(sol.estado) : 'PENDIENTE OC / HES';
     const estadosProyecciones = AppConfig.estadosProyecciones || [];
     let btns = '';
 
+    if (SolicitudesView._state.isPlatform) {
+      if (!readonly || sol) {
+        btns += '<button class="btn btn-success btn-lg" id="btn-exportar"><i class="bi bi-file-earmark-excel"></i> Exportar Excel y guardar solicitud</button>';
+      }
+      if (!readonly || sol) {
+        btns += '<button class="btn btn-outline-danger" id="btn-eliminar-solicitud"><i class="bi bi-trash"></i> Descartar solicitud</button>';
+      }
+      $('#botones-estado').html(btns);
+      SolicitudesView._wireButtons();
+      return;
+    }
+
     if (!readonly) {
-      btns += '<button class="btn btn-primary" id="btn-guardar">Guardar solicitud</button>';
+      btns += '<button class="btn btn-primary btn-lg" id="btn-guardar"><i class="bi bi-save"></i> Guardar solicitud</button>';
       if (!estadosProyecciones.includes(estado)) {
         btns += '<button class="btn btn-outline-secondary" id="btn-revision">Enviar a revisión</button>';
       }
@@ -795,11 +1244,69 @@ window.SolicitudesView = {
     if (estado === 'Emitida') btns += '<button class="btn btn-success" id="btn-facturada">Marcar Facturada</button><button class="btn btn-danger" id="btn-anular">Anular</button>';
     if (['Facturada','Cerrada','Emitida'].includes(estado)) btns += '';
     if (sol) btns += '<button class="btn btn-outline-success" id="btn-exportar"><i class="bi bi-file-earmark-excel"></i> Exportar Excel</button>';
-    if (sol) btns += '<button class="btn btn-outline-secondary" id="btn-duplicar">Duplicar</button>';
+    if (sol) btns += '<button class="btn btn-outline-secondary" id="btn-duplicar"><i class="bi bi-files"></i> Duplicar</button>';
     if (sol) btns += '<button class="btn btn-outline-danger" id="btn-eliminar-solicitud"><i class="bi bi-trash"></i> Eliminar solicitud</button>';
 
     $('#botones-estado').html(btns);
     SolicitudesView._wireButtons();
+  },
+
+  _mostrarErrorExportacion(errores) {
+    const lista = (errores || []).filter(Boolean);
+    const msg = lista.length
+      ? 'No se puede exportar todavia. ' + lista.join(' ')
+      : 'No se puede exportar todavia. Revisa los campos marcados.';
+    $('#solicitud-errors')
+      .removeClass('d-none')
+      .html('<strong>No se puede exportar todavia.</strong><br>' + lista.map(SolicitudesView._esc).join('<br>'));
+    UI.toast(msg, 'warning');
+  },
+
+  _descargarExcelSolicitud(id, successMessage) {
+    UI.toast('Generando XLSX...', 'info');
+    return SolicitudesService.exportar(id).then(exp => {
+      return SolicitudesService.descargarExportacion(exp.exportId).then(() => {
+        UI.toast(successMessage || 'XLSX descargado', 'success');
+      });
+    });
+  },
+
+  _exportarPlataformas() {
+    const payload = { ...SolicitudesView._collectForm(), estado: 'FACTURA SOLICITADA' };
+
+    const erroresBasicos = SolicitudesView._validarFormularioBasico(payload);
+    const erroresEnvio = Validators.paraEnviarRevision(payload);
+    const errores = [...new Set([...erroresBasicos, ...erroresEnvio])];
+    if (errores.length) {
+      SolicitudesView._mostrarErrorExportacion(errores);
+      return;
+    }
+
+    const state = SolicitudesView._state || {};
+    const current = state.sol;
+    const req = current
+      ? SolicitudesService.update(current.id, payload)
+      : SolicitudesService.create(payload);
+
+    $('[name=estado]').val('FACTURA SOLICITADA');
+    SolicitudesView._setAutosaveStatus('saving', 'Guardando para exportar...');
+    req.then(s => {
+      if (s) {
+        SolicitudesView._state.sol = s;
+        SolicitudesView._state.prefill = { ...SolicitudesView._state.prefill, ...s };
+        SolicitudesView._autosaveLastPayload = JSON.stringify(payload);
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState(null, '', '#/solicitudes/' + encodeURIComponent(s.id));
+        }
+        SolicitudesView._renderBotones();
+      }
+      SolicitudesView._setAutosaveStatus('saved', 'Solicitud guardada y Excel exportado');
+      return SolicitudesView._descargarExcelSolicitud((s && s.id) || (current && current.id), 'Solicitud guardada y Excel exportado');
+    }).fail(e => {
+      $('[name=estado]').val((current && current.estado) || 'PENDIENTE OC / HES');
+      SolicitudesView._setAutosaveStatus('error', 'Error al guardar');
+      SolicitudesView._mostrarErrorExportacion([e.message || 'No se pudo guardar antes de exportar.']);
+    });
   },
 
   _wireButtons() {
@@ -807,6 +1314,8 @@ window.SolicitudesView = {
 
     const _guardar = (hacia, cb) => {
       const payload = SolicitudesView._collectForm();
+      const erroresBasicos = SolicitudesView._validarFormularioBasico(payload);
+      if (erroresBasicos.length) return UI.toast('Revisa los campos marcados', 'warning');
       const errs = Validators.paraEnviarRevision(payload);
       if (errs.length) return UI.toast(errs.join(' | '), 'warning');
       const req = sol ? SolicitudesService.update(sol.id, payload) : SolicitudesService.create(payload);
@@ -869,18 +1378,17 @@ window.SolicitudesView = {
     });
 
     $('#btn-exportar').on('click', () => {
-      UI.toast('Generando XLSX…', 'info');
+      if (SolicitudesView._state.isPlatform) {
+        SolicitudesView._exportarPlataformas();
+        return;
+      }
       const preparar = SolicitudesView._state.readonly
         ? $.Deferred().resolve(sol).promise()
         : SolicitudesService.update(sol.id, SolicitudesView._collectForm());
 
       preparar.then(s => {
         const id = (s && s.id) || sol.id;
-        SolicitudesService.exportar(id).then(exp => {
-          return SolicitudesService.descargarExportacion(exp.exportId).then(() => {
-            UI.toast('XLSX descargado', 'success');
-          });
-        }).fail(e => UI.toast(e.message, 'danger'));
+        SolicitudesView._descargarExcelSolicitud(id).fail(e => UI.toast(e.message, 'danger'));
       }).fail(e => UI.toast(e.message || 'Error al guardar antes de exportar', 'danger'));
     });
 
@@ -892,20 +1400,33 @@ window.SolicitudesView = {
     });
 
     $('#btn-eliminar-solicitud').on('click', () => {
-      SolicitudesView._confirmDelete(sol.id).then(deleted => {
+      const current = SolicitudesView._state.sol || sol;
+      if (!current) {
+        UI.confirm('Descartar este borrador y empezar de nuevo?', 'Descartar solicitud', 'Descartar').then(ok => {
+          if (ok) location.hash = '#/solicitudes/nueva';
+        });
+        return;
+      }
+      SolicitudesView._confirmDelete(current.id).then(deleted => {
         if (deleted) location.hash = '#/solicitudes';
       });
     });
   },
 
   _confirmDelete(id) {
-    return UI.confirm('¿Seguro que deseas eliminar esta solicitud?', 'Eliminar solicitud').then(ok => {
+    const isPlatform = SolicitudesView._isPlatformUser();
+    const message = isPlatform
+      ? 'Seguro que deseas descartar esta solicitud? Esta accion no se puede deshacer.'
+      : '¿Seguro que deseas eliminar esta solicitud?';
+    const title = isPlatform ? 'Descartar solicitud' : 'Eliminar solicitud';
+    const okLabel = isPlatform ? 'Descartar' : 'Eliminar';
+    return UI.confirm(message, title, okLabel).then(ok => {
       if (!ok) return false;
       return SolicitudesService.delete(id).then(() => {
-        UI.toast('Solicitud eliminada correctamente', 'success');
+        UI.toast(isPlatform ? 'Solicitud descartada correctamente' : 'Solicitud eliminada correctamente', 'success');
         return true;
       }, e => {
-        UI.toast(e.message || 'Error al eliminar solicitud', 'danger');
+        UI.toast(e.message || (isPlatform ? 'Error al descartar solicitud' : 'Error al eliminar solicitud'), 'danger');
         return false;
       });
     });
@@ -935,6 +1456,41 @@ window.SolicitudesView = {
     if (texto !== null) $obs.val(texto);
   },
 
+  _fechaUfDesdePeriodo(periodo) {
+    const match = String(periodo || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return '';
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (!year || month < 1 || month > 12) return '';
+    const last = new Date(year, month, 0);
+    return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`;
+  },
+
+  _scheduleUfFetch(fecha, delay = 500) {
+    clearTimeout(SolicitudesView._ufTimer);
+    if (!fecha) return;
+    $('#uf-cp-help').text('Consultando UF...');
+    SolicitudesView._ufTimer = setTimeout(() => SolicitudesView._consultarUF(fecha), delay);
+  },
+
+  _consultarUF(fecha, toastResult = false) {
+    if (!fecha) return $.Deferred().reject(new Error('Fecha UF requerida')).promise();
+    $('#uf-cp-help').text('Consultando UF...');
+    return IntegracionesService.uf(fecha).then(d => {
+      $('[name=uf_valor]').val(d.valor);
+      SolicitudesView._aplicarUFEnCPActivo();
+      SolicitudesView._actualizarObservacionUF();
+      SolicitudesView._renderCPs();
+      SolicitudesView._recalcular();
+      $('#uf-cp-help').text('UF actualizada');
+      if (toastResult) UI.toast('UF ' + d.fecha + ': $' + d.valor, 'info');
+      return d;
+    }).fail(e => {
+      $('#uf-cp-help').text('No se pudo obtener UF');
+      if (toastResult) UI.toast(e.message || 'Error UF', 'danger');
+    });
+  },
+
   _collectForm() {
     const val = n => $(`[name=${n}]`).val();
     const { cps, receptores } = SolicitudesView._state;
@@ -957,7 +1513,7 @@ window.SolicitudesView = {
       contrato_numero: val('contrato_numero') || null,
       hes_numero: hesNumero,
       glosa: val('glosa'),
-      area: $('[name=area_plataforma]').is(':checked') ? 'Plataforma' : null,
+      area: SolicitudesView._isPlatformUser() ? 'Plataforma' : ($('[name=area_plataforma]').is(':checked') ? 'Plataforma' : null),
       moneda_base: val('moneda_base') || 'CLP',
       uf_fecha: ufFecha,
       uf_valor: ufValor,
@@ -994,7 +1550,15 @@ window.SolicitudesView = {
       .toUpperCase() === 'PENDIENTE OC / HES';
   },
 
-  _state: { sol: null, readonly: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [], activeCpIndex: null },
+  _esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  },
+
+  _state: { sol: null, readonly: false, isPlatform: false, cps: [], receptores: [], clienteActual: null, cpsDisponibles: [], activeCpIndex: null },
   _lastNeto: 0,
   _lastNetoAutomatico: 0
 };

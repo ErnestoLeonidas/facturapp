@@ -5,15 +5,11 @@ const { ok, fail, notFound } = require('../middleware/envelope');
 const { cambiarEstado, puedeEditar } = require('../services/estados');
 const { generarFolio } = require('../utils/folio');
 const audit = require('../services/audit');
+const { coordinadorScope } = require('../services/access');
 
 const EMPRESA_EMISORA_DEFAULT = 'MAS_CONSULTORES';
 const EMPRESAS_EMISORAS_SOLICITUD = ['MAS_CONSULTORES', 'INSTITUTO_ROI'];
 const TIPO_IMPUESTO_UNICO = 'AFECTO_IVA';
-
-function coordinadorScope(req) {
-  if (!req.user || req.user.rol === 'admin') return null;
-  return req.user.coordinador_id || '__none__';
-}
 
 function aplicarScope(sql, vals, req, alias = 'sf') {
   const coordinatorId = coordinadorScope(req);
@@ -358,7 +354,9 @@ function validarDatosPorEstado(s, netoCLP) {
   }
 
   if (errs.length) {
-    const err = new Error('Faltan datos obligatorios para el estado seleccionado: ' + errs.join(', '));
+    const labels = { coordinador_id: 'responsable' };
+    const visibles = errs.map(field => labels[field] || field);
+    const err = new Error('Faltan datos obligatorios para el estado seleccionado: ' + visibles.join(', '));
     err.code = 'VALIDATION_ERROR';
     throw err;
   }
@@ -434,7 +432,18 @@ r.get('/', async (req, res, next) => {
     if (estado)    { sql += ' AND sf.estado = ?'; vals.push(normalizarEstadoSolicitud(estado)); }
     if (periodo)   { sql += ' AND sf.periodo = ?'; vals.push(periodo); }
     if (tipo)      { sql += ' AND sf.tipo = ?'; vals.push(tipo); }
-    if (q)         { sql += ' AND (sf.folio LIKE ? OR sf.glosa LIKE ? OR c.nombre_corto LIKE ?)'; vals.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+    if (q) {
+      sql += ` AND (
+        LOWER(COALESCE(sf.folio, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(sf.glosa, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(sf.oc_numero, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(sf.contrato_numero, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(c.nombre_corto, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(c.razon_social, '')) LIKE LOWER(?)
+        OR LOWER(COALESCE(c.rut, '')) LIKE LOWER(?)
+      )`;
+      vals.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+    }
     sql += ' ORDER BY sf.created_at DESC LIMIT 200';
     const reales = [];
     for (const row of await db.all(sql, vals)) {
@@ -455,7 +464,7 @@ r.post('/', async (req, res, next) => {
   try {
     const b = req.body || {};
     const coordinatorId = coordinadorScope(req);
-    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene responsable asociado', null, 403);
     if (coordinatorId) b.coordinador_id = coordinatorId;
     b.empresa_emisora = empresaEmisoraSolicitud(b.empresa_emisora || EMPRESA_EMISORA_DEFAULT);
     if (!b.cliente_id || !b.empresa_emisora || !b.periodo)
@@ -463,11 +472,11 @@ r.post('/', async (req, res, next) => {
     if (!(await clienteActivo(b.cliente_id)))
       return fail(res, 'VALIDATION_ERROR', 'Cliente no existe o esta inactivo');
     if (coordinatorId && !(await clienteAsignadoAlCoordinador(b.cliente_id, coordinatorId)))
-      return fail(res, 'FORBIDDEN', 'El cliente no esta asignado a tu coordinador', null, 403);
+      return fail(res, 'FORBIDDEN', 'El cliente no esta asignado a tu responsable', null, 403);
     if (!empresaEmisoraValida(b.empresa_emisora))
       return fail(res, 'VALIDATION_ERROR', 'Facturar Por no es valido');
     if (b.coordinador_id && !(await coordinadorActivo(b.coordinador_id)))
-      return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
+      return fail(res, 'VALIDATION_ERROR', 'Responsable no existe o esta inactivo');
 
     const id = uuidv4();
     let clienteFacturacionId = null;
@@ -578,10 +587,10 @@ r.patch('/:id', async (req, res, next) => {
 
     const b = req.body || {};
     const coordinatorId = coordinadorScope(req);
-    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene coordinador asociado', null, 403);
+    if (coordinatorId === '__none__') return fail(res, 'FORBIDDEN', 'Tu usuario no tiene responsable asociado', null, 403);
     if (coordinatorId) {
       if (b.coordinador_id !== undefined && b.coordinador_id !== coordinatorId) {
-        return fail(res, 'FORBIDDEN', 'Solo un admin puede cambiar el coordinador de una solicitud', null, 403);
+        return fail(res, 'FORBIDDEN', 'Solo un admin puede cambiar el responsable de una solicitud', null, 403);
       }
       b.coordinador_id = coordinatorId;
     }
@@ -589,12 +598,21 @@ r.patch('/:id', async (req, res, next) => {
       b.empresa_emisora = empresaEmisoraSolicitud(b.empresa_emisora);
       if (!b.empresa_emisora) return fail(res, 'VALIDATION_ERROR', 'Facturar Por no es valido');
     }
+    let clienteIdEfectivo = sol.cliente_id;
+    if (b.cliente_id !== undefined) {
+      if (!b.cliente_id) return fail(res, 'VALIDATION_ERROR', 'cliente_id es requerido');
+      if (!(await clienteActivo(b.cliente_id)))
+        return fail(res, 'VALIDATION_ERROR', 'Cliente no existe o esta inactivo');
+      if (coordinatorId && !(await clienteAsignadoAlCoordinador(b.cliente_id, coordinatorId)))
+        return fail(res, 'FORBIDDEN', 'El cliente no esta asignado a tu responsable', null, 403);
+      clienteIdEfectivo = b.cliente_id;
+    }
     if (b.coordinador_id && !(await coordinadorActivo(b.coordinador_id)))
-      return fail(res, 'VALIDATION_ERROR', 'Encargado de solicitud no existe o esta inactivo');
+      return fail(res, 'VALIDATION_ERROR', 'Responsable no existe o esta inactivo');
     let clienteFacturacionId = sol.cliente_facturacion_id || null;
     if (b.cliente_facturacion_id !== undefined) {
       try {
-        clienteFacturacionId = await validarClienteFacturacion(sol.cliente_id, b.cliente_facturacion_id);
+        clienteFacturacionId = await validarClienteFacturacion(clienteIdEfectivo, b.cliente_facturacion_id);
       } catch (e) {
         return fail(res, e.code || 'VALIDATION_ERROR', e.message);
       }
@@ -620,7 +638,7 @@ r.patch('/:id', async (req, res, next) => {
     let cpsNormalizados = [];
     if (b.cps !== undefined) {
       try {
-        cpsNormalizados = await normalizarCPsDeCliente(b.cps, sol.cliente_id, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor);
+        cpsNormalizados = await normalizarCPsDeCliente(b.cps, clienteIdEfectivo, b.uf_valor !== undefined ? b.uf_valor : sol.uf_valor);
       } catch (e) {
         return fail(res, e.code || 'VALIDATION_ERROR', e.message);
       }
@@ -645,11 +663,12 @@ r.patch('/:id', async (req, res, next) => {
     );
     try {
       if (b.receptores !== undefined) {
-        receptoresEfectivos = await normalizarReceptoresDeCliente(b.receptores, sol.cliente_id);
+        receptoresEfectivos = await normalizarReceptoresDeCliente(b.receptores, clienteIdEfectivo);
       }
       validarDatosPorEstado({
         ...sol,
         ...b,
+        cliente_id: clienteIdEfectivo,
         estado: estadoEfectivo,
         coordinador_id: b.coordinador_id !== undefined ? b.coordinador_id : sol.coordinador_id,
         glosa: b.glosa !== undefined ? b.glosa : sol.glosa,
@@ -666,7 +685,7 @@ r.patch('/:id', async (req, res, next) => {
     }
 
     await db.transaction(async tx => {
-      const fields = ['tipo','coordinador_id','empresa_emisora','periodo','fecha_solicitud','oc_numero',
+      const fields = ['tipo','cliente_id','coordinador_id','empresa_emisora','periodo','fecha_solicitud','oc_numero',
         'contrato_numero','hes_numero','glosa','area','moneda_base','uf_fecha','uf_valor'];
       const sets = ['monto_neto_clp=?', 'monto_iva_clp=?', 'monto_total_clp=?', 'monto_neto_clp_manual=?', 'updated_at=?'];
       const vals = [monto_neto_clp, monto_iva_clp, monto_total_clp, montoNetoManual, db.nowText()];
