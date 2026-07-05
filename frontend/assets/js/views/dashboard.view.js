@@ -1,240 +1,501 @@
 window.DashboardView = {
   render() {
-    UI.setTitle('Dashboard');
-    const user = AuthService.user && AuthService.user();
-    const nombre = DashboardView._esc(DashboardView._primerNombre((user && (user.nombre || user.username)) || 'usuario'));
-    const periodoActual = DashboardView._periodoActual();
-    const anioActual = new Date().getFullYear();
-    const mesActual = DashboardView._nombreMesActual();
+    $('#page-title').empty();
 
     $('#view-root').html(`
-      <section class="dashboard-welcome mb-3">
-        <div>
-          <h4 class="mb-1">Hola ${nombre} !</h4>
-          <p class="text-muted mb-0">Tu tablero de solicitudes esta listo para avanzar.</p>
+      <section class="home-hero mb-3">
+        <div class="home-hero-copy">
+          <small class="text-muted">FactuFlow</small>
+          <h3 class="mb-1">Bienvenido Masit@</h3>
+          <p class="text-muted mb-0">¿Qué deseas hacer hoy?</p>
         </div>
-        <a href="#/solicitudes/nueva" class="btn btn-primary btn-sm">
-          <i class="bi bi-plus-lg me-1"></i>Nueva solicitud
-        </a>
-      </section>
-
-      <section class="dashboard-progress mb-3">
-        <div class="dashboard-progress-head">
-          <div>
-            <small class="text-muted">Progreso de solicitudes</small>
-            <h5 class="mb-0" id="dash-progress-title">Avance anual ${anioActual}</h5>
-          </div>
-          <strong id="dash-progress-percent">0%</strong>
-        </div>
-        <div class="progress dashboard-progress-bar" role="progressbar" aria-label="Progreso de solicitudes" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-          <div class="progress-bar" id="dash-progress-fill" style="width:0%"></div>
-        </div>
-        <div class="dashboard-progress-foot">
-          <span id="dash-progress-copy">Revisando solicitudes anuales...</span>
-          <span id="dash-progress-count">0 de 0</span>
+        <div class="home-hero-actions">
+          <a href="#/solicitudes/nueva" class="btn btn-primary btn-lg home-main-action">
+            <i class="bi bi-plus-lg"></i>
+            <span>Crear solicitud</span>
+          </a>
+          <button type="button" class="btn btn-outline-secondary btn-lg" id="home-duplicate-btn">
+            <i class="bi bi-files"></i>
+            <span>Duplicar solicitud anterior</span>
+          </button>
         </div>
       </section>
 
-      <section class="kpi-grid dashboard-kpis mb-4">
-        <article class="card-kpi kpi-pending">
-          <div class="kpi-icon"><i class="bi bi-hourglass-split"></i></div>
-          <small class="text-muted">Pendientes ${mesActual}</small>
-          <h3 data-kpi="revision">-</h3>
-        </article>
-        <article class="card-kpi kpi-ready">
-          <div class="kpi-icon"><i class="bi bi-check2-circle"></i></div>
-          <small class="text-muted">Gestionadas anual</small>
-          <h3 data-kpi="emitidas">-</h3>
-        </article>
-        <article class="card-kpi kpi-extra">
-          <div class="kpi-icon"><i class="bi bi-stars"></i></div>
-          <small class="text-muted">Adicionales activas</small>
-          <h3 data-kpi="adicionales">-</h3>
-        </article>
-        <article class="card-kpi kpi-total">
-          <div class="kpi-icon"><i class="bi bi-folder2-open"></i></div>
-          <small class="text-muted">Total anual</small>
-          <h3 data-kpi="total">-</h3>
-        </article>
+      <section class="home-grid mb-3">
+        <div class="card home-search-card">
+          <div class="card-body">
+            <form id="home-search-form" class="home-search-form">
+              <label class="form-label fw-semibold" for="home-search-input">Busqueda rapida</label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input class="form-control" id="home-search-input" name="q" placeholder="Buscar por cliente, folio u OC" autocomplete="off">
+                <button class="btn btn-primary" type="submit">Buscar</button>
+              </div>
+              <div id="home-search-suggestions" class="home-search-suggestions d-none" aria-live="polite" aria-hidden="true"></div>
+            </form>
+          </div>
+        </div>
+
+        <div class="home-access-grid" aria-label="Accesos utiles">
+          <a class="home-access-card" href="#/solicitudes">
+            <span class="home-access-icon"><i class="bi bi-file-earmark-text"></i></span>
+            <span>
+              <strong>Solicitudes</strong>
+              <small>Buscar y revisar</small>
+            </span>
+          </a>
+          <a class="home-access-card" href="#/clientes">
+            <span class="home-access-icon"><i class="bi bi-building"></i></span>
+            <span>
+              <strong>Clientes</strong>
+              <small>Datos y receptores</small>
+            </span>
+          </a>
+          <a class="home-access-card" href="#/historial-uf">
+            <span class="home-access-icon"><i class="bi bi-graph-up"></i></span>
+            <span>
+              <strong>Historial UF</strong>
+              <small>Valores disponibles</small>
+            </span>
+          </a>
+        </div>
       </section>
 
-      <div class="row g-3">
-        <div class="col-lg-6">
-          <div class="card dashboard-panel h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span>Solicitudes por cliente</span>
-              <small class="text-muted" id="dash-client-count">Anual ${anioActual}</small>
-            </div>
-            <div class="card-body">
-              <div id="dash-clientes-solicitudes" class="dashboard-donut-wrap"></div>
+      <section class="card home-recent-card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span>Solicitudes recientes</span>
+          <a href="#/solicitudes" class="btn btn-sm btn-outline-secondary">Ver todas</a>
+        </div>
+        <div class="card-body p-0">
+          <div id="home-recent-list" class="home-recent-list">
+            <div class="text-center py-4">
+              <div class="spinner-border spinner-border-sm" role="status"></div>
             </div>
           </div>
         </div>
-        <div class="col-lg-6">
-          <div class="card dashboard-panel h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <span>Monto por cliente</span>
-              <small class="text-muted">CLP total</small>
+      </section>
+
+      <div class="modal fade" id="home-duplicate-modal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Duplicar solicitud anterior</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
-            <div class="card-body">
-              <div id="dash-clientes-montos" class="dashboard-chart-list"></div>
+            <div class="modal-body">
+              <label class="form-label fw-semibold" for="home-duplicate-client-input">Cliente</label>
+              <div class="cliente-autocomplete">
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-search"></i></span>
+                  <input class="form-control" id="home-duplicate-client-input" placeholder="Escribe nombre, razon social o RUT" autocomplete="off">
+                  <button class="btn btn-outline-secondary" type="button" id="home-duplicate-client-clear" title="Limpiar cliente">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                </div>
+                <input type="hidden" id="home-duplicate-client" value="">
+                <div class="cliente-suggestions d-none" id="home-duplicate-client-suggestions"></div>
+              </div>
+              <div id="home-duplicate-results" class="home-duplicate-results mt-3">
+                <div class="text-muted small">Busca un cliente para ver sus ultimas solicitudes.</div>
+              </div>
             </div>
-          </div>
-        </div>
-        <div class="col-12">
-          <div class="card dashboard-panel">
-            <div class="card-header">Por estado</div>
-            <div class="card-body" id="dash-estados"><em class="text-muted small">Cargando...</em></div>
           </div>
         </div>
       </div>
     `);
 
-    SolicitudesService.list({ limit: 200 }).then(data => {
-      const rows = Array.isArray(data) ? data : (data.items || data);
-      const rowsAnio = rows.filter(s => String(s.periodo || '').startsWith(String(anioActual)));
-      const rowsMes = rowsAnio.filter(s => s.periodo === periodoActual);
-      const rev = rowsMes.filter(s => ['PENDIENTE OC / HES', 'EnRevision'].includes(s.estado)).length;
-      const emit = rowsAnio.filter(s => DashboardView._estadosGestionados().includes(s.estado)).length;
-      const adic = rowsAnio.filter(s => s.tipo === 'adicional' && !['Cerrada', 'Anulada'].includes(s.estado)).length;
+    $('#home-search-form').on('submit', e => {
+      e.preventDefault();
+      const q = String($('#home-search-input').val() || '').trim();
+      location.hash = q ? '#/solicitudes?q=' + encodeURIComponent(q) : '#/solicitudes';
+    });
 
-      DashboardView._renderProgreso(rowsAnio, anioActual);
-      DashboardView._renderClienteCharts(rowsAnio);
-      DashboardView._renderEstados(rowsAnio);
-      $('[data-kpi=revision]').text(rev);
-      $('[data-kpi=emitidas]').text(emit);
-      $('[data-kpi=adicionales]').text(adic);
-      $('[data-kpi=total]').text(rowsAnio.length);
+    DashboardView._initHomeSearch();
+    DashboardView._initDuplicarModal();
+
+    SolicitudesService.list({ limit: 12 }).then(data => {
+      const rows = DashboardView._normalizarLista(data)
+        .sort((a, b) => DashboardView._fechaComparable(b) - DashboardView._fechaComparable(a))
+        .slice(0, 6);
+      DashboardView._renderRecientes(rows);
     }).fail(e => {
-      const msg = DashboardView._esc(e.message || 'No se pudo cargar dashboard');
-      $('#dash-clientes-solicitudes').html(`<div class="text-danger small">${msg}</div>`);
-      $('#dash-clientes-montos').html(`<div class="text-danger small">${msg}</div>`);
-      $('#dash-estados').html(`<div class="text-danger small">${msg}</div>`);
+      const msg = DashboardView._esc(e.message || 'No se pudieron cargar las solicitudes recientes');
+      $('#home-recent-list').html(`<div class="text-danger small p-3">${msg}</div>`);
     });
   },
 
-  _renderProgreso(rows, anio) {
-    const total = rows.length;
-    const listos = rows.filter(s => DashboardView._estadosGestionados().includes(s.estado)).length;
-    const porcentaje = total ? Math.round((listos / total) * 100) : 0;
-    const copy = total ? DashboardView._mensajeProgreso(porcentaje) : 'Sin solicitudes anuales para medir por ahora.';
+  _initDuplicarModal() {
+    const $modal = $('#home-duplicate-modal');
+    const modal = new bootstrap.Modal($modal[0]);
+    const $client = $('#home-duplicate-client');
+    const $input = $('#home-duplicate-client-input');
+    const $suggestions = $('#home-duplicate-client-suggestions');
+    const $clear = $('#home-duplicate-client-clear');
+    const $results = $('#home-duplicate-results');
 
-    $('#dash-progress-title').text(`Avance anual ${anio}`);
-    $('#dash-progress-percent').text(`${porcentaje}%`);
-    $('#dash-progress-fill').css('width', `${porcentaje}%`);
-    $('.dashboard-progress-bar').attr('aria-valuenow', porcentaje);
-    $('#dash-progress-copy').text(copy);
-    $('#dash-progress-count').text(`${listos} de ${total} gestionadas`);
-  },
-
-  _renderClienteCharts(rows) {
-    const porCliente = new Map();
-    rows.forEach(row => {
-      const cliente = row.cliente_nombre || 'Sin cliente';
-      const current = porCliente.get(cliente) || { cliente, cantidad: 0, monto: 0 };
-      current.cantidad += 1;
-      current.monto += Number(row.monto_total_clp) || 0;
-      porCliente.set(cliente, current);
+    $('#home-duplicate-btn').on('click', () => {
+      modal.show();
+      DashboardView._ensureClientes().then(() => {
+        setTimeout(() => $input.trigger('focus'), 180);
+      }).fail(e => {
+        $results.html(`<div class="alert alert-danger py-2 mb-0">${DashboardView._esc(e.message || 'No se pudieron cargar los clientes')}</div>`);
+      });
     });
 
-    const data = Array.from(porCliente.values());
-    const porCantidad = data.slice().sort((a, b) => b.cantidad - a.cantidad || a.cliente.localeCompare(b.cliente, 'es')).slice(0, 10);
-    const porMonto = data.slice().sort((a, b) => b.monto - a.monto || a.cliente.localeCompare(b.cliente, 'es')).slice(0, 10);
+    const renderClientSuggestions = () => {
+      const q = $input.val();
+      const rows = DashboardView._clientesFiltrados(q, 8);
+      if (!String(q || '').trim()) {
+        $suggestions.addClass('d-none').empty();
+        return;
+      }
+      if (!rows.length) {
+        $suggestions.removeClass('d-none').html('<div class="cliente-suggestion-empty">No encontramos ese cliente</div>');
+        return;
+      }
+      $suggestions.removeClass('d-none').html(rows.map(c => DashboardView._renderClienteSuggestion(c, 'duplicate')).join(''));
+    };
 
-    $('#dash-clientes-solicitudes').html(DashboardView._donut(porCantidad));
-    $('#dash-clientes-montos').html(DashboardView._bars(
-      porMonto,
-      'monto',
-      item => Format.clp(item.monto)
-    ));
+    $input.on('input focus', () => {
+      $client.val('');
+      renderClientSuggestions();
+      if (!String($input.val() || '').trim()) {
+        $results.html('<div class="text-muted small">Busca un cliente para ver sus ultimas solicitudes.</div>');
+      }
+    });
+
+    $clear.on('click', () => {
+      $input.val('');
+      $client.val('');
+      $suggestions.addClass('d-none').empty();
+      $results.html('<div class="text-muted small">Busca un cliente para ver sus ultimas solicitudes.</div>');
+      $input.trigger('focus');
+    });
+
+    $suggestions.on('click', '[data-home-select-client]', function() {
+      const clienteId = $(this).data('home-select-client');
+      const cliente = DashboardView._clienteById(clienteId);
+      $client.val(clienteId);
+      $input.val((cliente && cliente.nombre_corto) || '');
+      $suggestions.addClass('d-none').empty();
+      DashboardView._loadDuplicarSolicitudes(clienteId);
+    });
+
+    $results.on('click', '[data-duplicate-solicitud]', function() {
+      const id = $(this).data('duplicate-solicitud');
+      const $btn = $(this);
+      $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Duplicando');
+      if (AuthService.isPlatformUser && AuthService.isPlatformUser()) {
+        modal.hide();
+        location.hash = '#/solicitudes/nueva?duplicar=' + encodeURIComponent(id);
+        $btn.prop('disabled', false).text('Duplicar');
+        return;
+      }
+      SolicitudesService.duplicar(id).then(s => {
+        modal.hide();
+        UI.toast('Solicitud duplicada', 'success');
+        location.hash = '#/solicitudes/' + encodeURIComponent(s.id);
+      }).fail(e => {
+        UI.toast(e.message || 'No se pudo duplicar', 'danger');
+      }).always(() => {
+        $btn.prop('disabled', false).text('Duplicar');
+      });
+    });
+
+    $(document).off('click.homeDuplicateClient').on('click.homeDuplicateClient', e => {
+      if (!$(e.target).closest('#home-duplicate-modal .cliente-autocomplete').length) {
+        $suggestions.addClass('d-none');
+      }
+    });
   },
 
-  _donut(rows) {
-    if (!rows.length) return '<div class="text-center text-muted py-3">Sin datos para graficar.</div>';
-    const total = rows.reduce((sum, row) => sum + row.cantidad, 0);
-    const colors = [
-      'var(--brand-green)',
-      'var(--brand-blue)',
-      'var(--brand-yellow)',
-      'var(--brand-purple)',
-      '#14b8a6',
-      '#ef4444',
-      '#64748b',
-      '#f97316',
-      '#0ea5e9',
-      '#84cc16'
-    ];
-    let start = 0;
-    const segments = rows.map((row, i) => {
-      const end = start + (row.cantidad / total) * 100;
-      const part = `${colors[i % colors.length]} ${start}% ${end}%`;
-      start = end;
-      return part;
-    }).join(', ');
+  _initHomeSearch() {
+    const $input = $('#home-search-input');
+    const $box = $('#home-search-suggestions');
+    if (!$input.length) return;
 
-    return `
-      <div class="dashboard-donut-layout">
-        <div class="dashboard-donut" style="background: conic-gradient(${segments})">
-          <div class="dashboard-donut-hole">
-            <strong>${total}</strong>
-            <span>solicitudes</span>
+    let timer = null;
+    let seq = 0;
+
+    const closeSuggestions = (clearContent = false) => {
+      clearTimeout(timer);
+      seq += 1;
+      $box.addClass('d-none').attr('aria-hidden', 'true');
+      if (clearContent) $box.empty();
+    };
+
+    const run = () => {
+      const q = String($input.val() || '').trim();
+      const token = ++seq;
+      clearTimeout(timer);
+      if (!q) {
+        closeSuggestions(true);
+        return;
+      }
+      timer = setTimeout(() => {
+        $box.removeClass('d-none').attr('aria-hidden', 'false').html('<div class="home-suggestion-loading"><span class="spinner-border spinner-border-sm"></span> Buscando...</div>');
+        DashboardView._ensureClientes().then(clientes => {
+          const clientesRows = DashboardView._clientesFiltrados(q, 5, clientes);
+          SolicitudesService.list({ q }).then(data => {
+            if (token !== seq) return;
+            const solicitudes = DashboardView._normalizarLista(data)
+              .sort((a, b) => DashboardView._fechaComparable(b) - DashboardView._fechaComparable(a))
+              .slice(0, 6);
+            DashboardView._renderHomeSearchResults(q, clientesRows, solicitudes);
+          }).fail(e => {
+            if (token !== seq) return;
+            DashboardView._renderHomeSearchResults(q, clientesRows, [], e.message || 'No se pudieron buscar solicitudes');
+          });
+        }).fail(e => {
+          if (token !== seq) return;
+          $box.removeClass('d-none').attr('aria-hidden', 'false').html(`<div class="cliente-suggestion-empty">No se pudieron cargar clientes: ${DashboardView._esc(e.message || '')}</div>`);
+        });
+      }, 220);
+    };
+
+    $input.on('input focus', run);
+    $input.on('keydown', e => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSuggestions();
+        $input.trigger('blur');
+      }
+    });
+
+    $box.on('click', '[data-home-create-client]', function(e) {
+      e.preventDefault();
+      closeSuggestions();
+      location.hash = '#/solicitudes/nueva?clienteId=' + encodeURIComponent($(this).data('home-create-client'));
+    });
+    $box.on('click', '[data-home-view-client]', function(e) {
+      e.preventDefault();
+      closeSuggestions();
+      location.hash = '#/solicitudes?clienteId=' + encodeURIComponent($(this).data('home-view-client'));
+    });
+    $box.on('click', '[data-home-duplicate-client]', function(e) {
+      e.preventDefault();
+      closeSuggestions();
+      DashboardView._duplicarUltimaCliente($(this).data('home-duplicate-client'), $(this));
+    });
+    $box.on('click', '[data-home-open-solicitud]', function(e) {
+      e.preventDefault();
+      closeSuggestions();
+      location.hash = '#/solicitudes/' + encodeURIComponent($(this).data('home-open-solicitud'));
+    });
+
+    $(document).off('click.homeSearch').on('click.homeSearch', e => {
+      if (!$(e.target).closest('.home-search-card').length) closeSuggestions();
+    });
+    $(document).off('keydown.homeSearch').on('keydown.homeSearch', e => {
+      if (e.key === 'Escape' && !$box.hasClass('d-none')) {
+        e.preventDefault();
+        closeSuggestions();
+        $input.trigger('focus');
+      }
+    });
+  },
+
+  _renderHomeSearchResults(q, clientes, solicitudes, errorMessage) {
+    const $box = $('#home-search-suggestions');
+    const clienteHtml = (clientes || []).map(c => `
+      <article class="home-suggestion-item home-suggestion-client">
+        <div class="home-suggestion-main">
+          <small class="home-suggestion-kind">Cliente</small>
+          <strong>${DashboardView._esc(c.nombre_corto || '')}</strong>
+          <span>${DashboardView._esc(c.razon_social || '')}</span>
+          <small class="text-muted">${DashboardView._esc(c.rut || '')}</small>
+        </div>
+        <div class="home-suggestion-actions">
+          <button class="btn btn-sm btn-primary" type="button" data-home-create-client="${DashboardView._esc(c.id)}">Crear solicitud</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-home-view-client="${DashboardView._esc(c.id)}">Ver solicitudes</button>
+          <button class="btn btn-sm btn-outline-success" type="button" data-home-duplicate-client="${DashboardView._esc(c.id)}">Duplicar ultima</button>
+        </div>
+      </article>
+    `).join('');
+
+    const solicitudHtml = (solicitudes || []).map(s => {
+      const fecha = s.fecha_solicitud || (s.created_at && String(s.created_at).slice(0, 10)) || '';
+      return `
+        <article class="home-suggestion-item">
+          <div class="home-suggestion-main">
+            <small class="home-suggestion-kind">Solicitud</small>
+            <strong>${DashboardView._esc(s.folio || 'Sin folio')}</strong>
+            <span>${DashboardView._esc(s.cliente_nombre || 'Sin cliente')}</span>
+            <small class="text-muted">${DashboardView._esc(Format.fecha(fecha) || fecha || 'Sin fecha')}${s.estado ? ' - ' + DashboardView._esc(s.estado) : ''}</small>
           </div>
-        </div>
-        <div class="dashboard-donut-legend">
-          ${rows.map((row, i) => `
-            <a class="dashboard-donut-item" href="#/solicitudes">
-              <span class="dashboard-donut-swatch" style="background:${colors[i % colors.length]}"></span>
-              <span>${DashboardView._esc(row.cliente)}</span>
-              <strong>${row.cantidad}</strong>
-            </a>
-          `).join('')}
-        </div>
-      </div>
+          <div class="home-suggestion-actions">
+            <button class="btn btn-sm btn-outline-primary" type="button" data-home-open-solicitud="${DashboardView._esc(s.id)}">Ver</button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    if (!clienteHtml && !solicitudHtml) {
+      $box.removeClass('d-none').attr('aria-hidden', 'false').html('<div class="cliente-suggestion-empty">No encontramos resultados para esta busqueda</div>');
+      return;
+    }
+
+    $box.removeClass('d-none').attr('aria-hidden', 'false').html(`
+      ${errorMessage ? `<div class="alert alert-warning py-2 mb-2">${DashboardView._esc(errorMessage)}</div>` : ''}
+      ${clienteHtml ? `<div class="home-suggestion-section"><div class="home-suggestion-heading">Clientes encontrados</div>${clienteHtml}</div>` : ''}
+      ${solicitudHtml ? `<div class="home-suggestion-section"><div class="home-suggestion-heading">Solicitudes encontradas</div>${solicitudHtml}</div>` : ''}
+    `);
+  },
+
+  _loadDuplicarSolicitudes(clienteId) {
+    const $results = $('#home-duplicate-results');
+    if (!clienteId) {
+      $results.html('<div class="text-muted small">Busca un cliente para ver sus ultimas solicitudes.</div>');
+      return;
+    }
+    $results.html('<div class="text-center py-3"><div class="spinner-border spinner-border-sm"></div></div>');
+    SolicitudesService.list({ clienteId }).then(data => {
+      const rows = DashboardView._normalizarLista(data)
+        .sort((a, b) => DashboardView._fechaComparable(b) - DashboardView._fechaComparable(a))
+        .slice(0, 8);
+      DashboardView._renderDuplicarResultados(rows);
+    }).fail(e => {
+      $results.html(`<div class="alert alert-danger py-2 mb-0">${DashboardView._esc(e.message || 'No se pudieron cargar solicitudes')}</div>`);
+    });
+  },
+
+  _duplicarUltimaCliente(clienteId, $btn) {
+    const originalText = $btn && $btn.text ? $btn.text() : '';
+    if ($btn && $btn.prop) $btn.prop('disabled', true).text('Buscando...');
+    return SolicitudesService.list({ clienteId }).then(data => {
+      const rows = DashboardView._normalizarLista(data)
+        .sort((a, b) => DashboardView._fechaComparable(b) - DashboardView._fechaComparable(a));
+      if (!rows.length) {
+        UI.toast('Este cliente no tiene solicitudes anteriores para duplicar', 'info');
+        return;
+      }
+      location.hash = '#/solicitudes/nueva?duplicar=' + encodeURIComponent(rows[0].id);
+    }).fail(e => {
+      UI.toast(e.message || 'No se pudo buscar la ultima solicitud', 'danger');
+    }).always(() => {
+      if ($btn && $btn.prop) $btn.prop('disabled', false).text(originalText || 'Duplicar ultima');
+    });
+  },
+
+  _ensureClientes() {
+    if (DashboardView._clientesCache) return $.Deferred().resolve(DashboardView._clientesCache).promise();
+    if (DashboardView._clientesLoading) return DashboardView._clientesLoading;
+    DashboardView._clientesLoading = ClientesService.list({ estado: 'Activo' }).then(clientes => {
+      DashboardView._clientesCache = clientes || [];
+      return DashboardView._clientesCache;
+    }).always(() => {
+      DashboardView._clientesLoading = null;
+    });
+    return DashboardView._clientesLoading;
+  },
+
+  _clientesFiltrados(query, limit = 8, clientes) {
+    const q = DashboardView._normalizarTexto(query);
+    if (!q) return [];
+    return (clientes || DashboardView._clientesCache || [])
+      .filter(c => DashboardView._clienteHaystack(c).includes(q))
+      .slice(0, limit);
+  },
+
+  _clienteHaystack(cliente) {
+    return DashboardView._normalizarTexto([
+      cliente && cliente.nombre_corto,
+      cliente && cliente.razon_social,
+      cliente && cliente.rut
+    ].filter(Boolean).join(' '));
+  },
+
+  _clienteById(id) {
+    return (DashboardView._clientesCache || []).find(c => String(c.id) === String(id));
+  },
+
+  _renderClienteSuggestion(c, context) {
+    const attr = context === 'duplicate' ? 'data-home-select-client' : 'data-home-client';
+    return `
+      <button type="button" class="cliente-suggestion" ${attr}="${DashboardView._esc(c.id)}">
+        <strong>${DashboardView._esc(c.nombre_corto || '')}</strong>
+        <span>${DashboardView._esc(c.razon_social || '')}</span>
+        <small>${DashboardView._esc(c.rut || '')}</small>
+      </button>
     `;
   },
 
-  _bars(rows, field, formatter) {
-    if (!rows.length) return '<div class="text-center text-muted py-3">Sin datos para graficar.</div>';
-    const max = Math.max(...rows.map(row => Number(row[field]) || 0), 1);
-    return rows.map((row, i) => {
-      const value = Number(row[field]) || 0;
-      const width = Math.max(3, Math.round((value / max) * 100));
+  _renderDuplicarResultados(rows) {
+    const $results = $('#home-duplicate-results');
+    if (!rows.length) {
+      $results.html('<div class="alert alert-info mb-0">Este cliente no tiene solicitudes anteriores para duplicar.</div>');
+      return;
+    }
+    const showEstado = !(AuthService.isPlatformUser && AuthService.isPlatformUser());
+    $results.html(rows.map(s => {
+      const fecha = s.fecha_solicitud || (s.created_at && String(s.created_at).slice(0, 10)) || '';
+      const total = Number(s.monto_total_clp) > 0 ? Format.clp(s.monto_total_clp) : '';
       return `
-        <a class="dashboard-bar-row" href="#/solicitudes">
-          <div class="dashboard-bar-label">
-            <span>${DashboardView._esc(row.cliente)}</span>
-            <strong>${DashboardView._esc(formatter(row))}</strong>
+        <article class="home-duplicate-item">
+          <div>
+            <strong>${DashboardView._esc(s.folio || 'Sin folio')}</strong>
+            <span>${DashboardView._esc(s.periodo || '')}</span>
+            <small class="text-muted">${DashboardView._esc(Format.fecha(fecha) || fecha || 'Sin fecha')}</small>
           </div>
-          <div class="dashboard-bar-track">
-            <div class="dashboard-bar-fill dashboard-bar-fill-${(i % 4) + 1}" style="width:${width}%"></div>
+          <div class="home-duplicate-meta">
+            ${showEstado ? UI.estadoChip(s.estado || '') : ''}
+            ${total ? `<strong>${DashboardView._esc(total)}</strong>` : ''}
+            <button class="btn btn-sm btn-primary" type="button" data-duplicate-solicitud="${DashboardView._esc(s.id)}">Duplicar</button>
           </div>
-        </a>
+        </article>
       `;
-    }).join('');
+    }).join(''));
   },
 
-  _renderEstados(rows) {
-    const estadoMap = {};
-    rows.forEach(s => { estadoMap[s.estado] = (estadoMap[s.estado] || 0) + 1; });
-    $('#dash-estados').html(Object.entries(estadoMap).map(([e, n]) =>
-      `<div class="dashboard-state-row">${UI.estadoChip(e)}<strong>${n}</strong></div>`
-    ).join('') || '<em class="text-muted small">Sin datos</em>');
+  _renderRecientes(rows) {
+    if (!rows.length) {
+      $('#home-recent-list').html(`
+        <div class="text-center text-muted py-4">
+          Aun no hay solicitudes para mostrar.
+        </div>
+      `);
+      return;
+    }
+
+    const showEstado = !(AuthService.isPlatformUser && AuthService.isPlatformUser());
+    $('#home-recent-list').html(rows.map(s => {
+      const fecha = s.fecha_solicitud || (s.created_at && String(s.created_at).slice(0, 10)) || '';
+      const total = Number(s.monto_total_clp) > 0 ? Format.clp(s.monto_total_clp) : '';
+      return `
+        <article class="home-recent-item">
+          <div class="home-recent-main">
+            <strong>${DashboardView._esc(s.folio || 'Sin folio')}</strong>
+            <span>${DashboardView._esc(s.cliente_nombre || 'Sin cliente')}</span>
+            <small class="text-muted">${DashboardView._esc(Format.fecha(fecha) || fecha || 'Sin fecha')}</small>
+          </div>
+          <div class="home-recent-meta">
+            ${showEstado ? UI.estadoChip(s.estado || '') : ''}
+            ${total ? `<strong>${DashboardView._esc(total)}</strong>` : ''}
+            <a class="btn btn-sm btn-outline-primary" href="#/solicitudes/${encodeURIComponent(s.id)}">Ver</a>
+          </div>
+        </article>
+      `;
+    }).join(''));
   },
 
-  _estadosGestionados() {
-    return ['FACTURA SOLICITADA', 'Aprobada', 'Emitida', 'Facturada', 'Cerrada'];
+  _normalizarLista(data) {
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.items)) return data.items;
+    return [];
   },
 
-  _mensajeProgreso(porcentaje) {
-    if (porcentaje >= 100) return 'Todo al dia. Excelente cierre.';
-    if (porcentaje >= 75) return 'Muy buen ritmo, queda poco por cerrar.';
-    if (porcentaje >= 45) return 'Buen avance, sigamos empujando.';
-    if (porcentaje > 0) return 'Ya hay movimiento, paso a paso.';
-    return 'Aun estamos a tiempo de partir con fuerza.';
+  _fechaComparable(row) {
+    const raw = row && (row.created_at || row.fecha_solicitud || row.updated_at);
+    const time = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
   },
 
-  _primerNombre(nombre) {
-    return String(nombre || 'usuario').trim().split(/\s+/)[0] || 'usuario';
+  _normalizarTexto(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
   },
 
   _esc(value) {
@@ -243,18 +504,5 @@ window.DashboardView = {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
-  },
-
-  _periodoActual() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  },
-
-  _nombreMesActual() {
-    const meses = [
-      'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-      'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'
-    ];
-    return meses[new Date().getMonth()];
   }
 };
