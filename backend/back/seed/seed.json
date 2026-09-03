@@ -1,0 +1,176 @@
+{
+  "_doc": "Seed PostgreSQL para maestros comerciales y solicitudes historicas iniciales. RUTs provenientes de planillas locales y fuentes publicas; validar con finanzas cuando el cliente use razon social alternativa.",
+  "empresas_emisoras": [
+    {
+      "codigo": "MAS_CONSULTORES",
+      "razon_social": "MAS Consultores S.A.",
+      "rut": "78.757.340-1",
+      "giro": "Asesoría en Recursos Humanos",
+      "direccion": "Hernando de Aguirre 268, Oficina 101, Providencia",
+      "telefono": "225840090",
+      "afecto_iva": true
+    },
+    {
+      "codigo": "MAS_CAPACITACION",
+      "razon_social": "Más Capacitación",
+      "rut": null,
+      "giro": "OTEC / Capacitación",
+      "direccion": null,
+      "telefono": null,
+      "afecto_iva": false
+    }
+  ],
+  "coordinadores": [
+    { "nombre": "Macarena Abásolo", "email": null, "slack_user_id": "U07AKJLQCTY", "activo": true },
+    { "nombre": "Monica Da Rocha", "email": null, "slack_user_id": "U09T7NL350T", "activo": true },
+    { "nombre": "Daniel Llanes", "email": null, "slack_user_id": "U07AKJLT4G6", "activo": true },
+    { "nombre": "Constanza Gaete", "email": null, "slack_user_id": "U0AR2F4G4F8", "activo": true }
+  ],
+  "areas": [
+    "MAS Plataformas",
+    "MAS Capacitación"
+  ],
+  "clientes": [
+    {
+      "nombre_corto": "Soprole",
+      "razon_social": "Soprole S.A.",
+      "rut": "76.101.812-4",
+      "giro": "Elaboradora de productos lácteos",
+      "direccion": "Av. Vitacura 4465, Vitacura",
+      "frecuencia": "Mensual",
+      "dia_facturacion": 27,
+      "mes_inicio": 1,
+      "requiere_hes": false,
+      "coordinador_slack": "U07AKJLQCTY",
+      "estado": "Activo",
+      "receptores": [
+        { "nombre": "Jeannette del Carmen Nanjari Barrera", "email": "jeannette.nanjari@soprole.cl" },
+        { "nombre": "Pablo Ruedi", "email": "pablo.ruedi@soprole.cl" }
+      ],
+      "cps": [
+        { "codigo": "MS25008", "nombre": "Plataforma Nutrir Soprole - split A", "area": "MAS Plataformas" },
+        { "codigo": "MS25009", "nombre": "Plataforma Nutrir Soprole - split B", "area": "MAS Plataformas" }
+      ]
+    },
+    {
+      "nombre_corto": "Hábitat",
+      "razon_social": "Administradora de Fondos de Pensiones Habitat S.A.",
+      "rut": "98.000.100-8",
+      "giro": "Administradora de Fondos de Pensiones",
+      "direccion": "Av. Providencia 1909, Providencia, Santiago",
+      "frecuencia": "Mensual",
+      "dia_facturacion": 30,
+      "mes_inicio": 1,
+      "requiere_hes": false,
+      "coordinador_slack": "U0AR2F4G4F8",
+      "estado": "A la espera de respuesta",
+      "notas": "no contesta",
+      "receptores": [
+        { "nombre": "Recepción de Facturas", "email": "recepciondte_afphabitat@azuriandte.com" },
+        { "nombre": "Fernanda Arias", "email": "fernanda.arias@afphabitat.cl" },
+        { "nombre": "Proveedores AFP Habitat", "email": "proveedores@afphabitat.cl" }
+      ],
+      "cps": [
+        { "codigo": "MS24209", "nombre": "Plataforma Desempeño 2025 - Contrato 1134", "area": "MAS Plataformas" }
+      ]
+    },
+    {
+      "nombre_corto": "Ariztía",
+      "razon_social": "Empresas Ariztía S.A.",
+      "rut": "79.622.910-1",
+      "giro": "Producción y comercialización de alimentos",
+      "direccion": "Los Carrera 444, Melipilla",
+      "frecuencia": "Trimestral",
+      "estado": "Activo",
+      "datos_facturacion": [
+        {
+          "etiqueta": "Datos cliente 2",
+          "razon_social": "Servicios Empresariales Puangue",
+          "rut": "78.098.060-5",
+          "giro": "Inversiones y Servicios de apoyo a las empresas.",
+          "direccion": "Los Carreras 444, Melipilla."
+        }
+      ]
+    },
+    {
+      "nombre_corto": "Arcor",
+      "razon_social": "Industria de Alimentos Dos en Uno S.A.",
+      "rut": "84.476.300-K",
+      "giro": "Fabricación de productos de confitería",
+      "direccion": "Placer 1324, Santiago",
+      "frecuencia": "Bimensual",
+      "estado": "Activo"
+    },
+    { "nombre_corto": "Aza", "razon_social": "Aceros AZA S.A.", "rut": "92.176.000-0", "giro": "Fundición y laminación de acero", "direccion": "Panamericana Norte 18968, Colina", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Banco Internacional", "razon_social": "Banco Internacional", "rut": "97.011.000-3", "giro": "Banco", "direccion": "Av. Apoquindo 6750, Las Condes, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Beco", "razon_social": "BancoEstado Servicios de Cobranza S.A.", "rut": "96.900.150-0", "giro": "Servicios de cobranza", "direccion": "San Diego 81, Piso 6, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Bex", "razon_social": "BancoEstado Centro de Servicios S.A.", "rut": "99.578.880-2", "giro": "Servicios auxiliares de la intermediación financiera", "direccion": "Nueva York 9, Piso 3, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Carozzi", "razon_social": "Empresas Carozzi S.A.", "rut": "96.591.040-9", "giro": "Fabricación de alimentos", "direccion": "Camino Longitudinal Sur 5201, San Bernardo, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Copec", "razon_social": "Copec S.A.", "rut": "99.520.000-7", "giro": "Venta al por mayor de combustibles y productos conexos", "direccion": "El Bosque Norte 0211, Las Condes, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Emin", "razon_social": "Emin Ingeniería y Construcción S.A.", "rut": "79.527.230-5", "giro": "Ingeniería y construcción", "direccion": "Félix de Amesti 90, Piso 3, Las Condes, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Enaex", "razon_social": "Enaex S.A.", "rut": "90.266.000-3", "giro": "Fabricación y servicios de explosivos para minería", "direccion": "El Trovador 4253, Piso 5, Las Condes, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Flesan", "razon_social": "Flesan S.A.", "rut": "76.259.040-9", "giro": "Ingeniería y construcción", "direccion": "Francisco Meneses 1980, Ñuñoa, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Magotteaux", "razon_social": "Magotteaux Andino S.A.", "rut": "78.803.130-0", "giro": "Servicios para la minería", "direccion": "Panamericana Norte Km 37, Til Til", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Resiter", "razon_social": "Empresa de Residuos Resiter S.A.", "rut": "89.696.400-3", "giro": "Manejo integral de residuos sólidos", "direccion": "J. J. Prieto 9750, Santiago", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Salmones Austral", "razon_social": "Salmones Austral S.A.", "rut": "76.296.099-0", "giro": "Producción de salmones", "direccion": "Av. Juan Soler Manfredini 41, Piso 12, Puerto Montt", "frecuencia": "Mensual", "estado": "Activo" },
+    { "nombre_corto": "Transelect", "razon_social": "Transelec S.A.", "rut": "76.555.400-4", "giro": "Transmisión de energía eléctrica", "direccion": "Orinoco 90, Piso 14, Las Condes, Santiago", "frecuencia": "Mensual", "estado": "Activo", "requiere_hes": true }
+  ],
+  "solicitudes": [
+    {
+      "folio": "SF-2025-90001",
+      "tipo": "mensual",
+      "cliente": "Hábitat",
+      "coordinador_slack": "U0AR2F4G4F8",
+      "empresa_emisora": "MAS_CONSULTORES",
+      "periodo": "2025-02",
+      "fecha_solicitud": "2025-02-10",
+      "contrato_numero": "1134",
+      "hes_numero": "N/A",
+      "glosa": "Servicio de administración y soporte anual Plataforma Desempeño 2025 - Contrato 1134",
+      "area": "MAS Plataformas",
+      "moneda_base": "CLP",
+      "monto_neto_clp": 18421003,
+      "monto_iva_clp": 3499991,
+      "monto_total_clp": 21920994,
+      "estado": "FACTURA SOLICITADA",
+      "observaciones": "Cargada desde Solicitud factura AFP HABITAT ejemplo.xls",
+      "cps": [
+        { "codigo": "MS24209", "monto_clp": 18421003 }
+      ],
+      "receptores": [
+        { "nombre": "Recepción de Facturas", "email": "recepciondte_afphabitat@azuriandte.com" },
+        { "nombre": "Fernanda Arias", "email": "fernanda.arias@afphabitat.cl" },
+        { "nombre": "Proveedores AFP Habitat", "email": "proveedores@afphabitat.cl" }
+      ]
+    },
+    {
+      "folio": "SF-2025-90002",
+      "tipo": "mensual",
+      "cliente": "Soprole",
+      "coordinador_slack": "U07AKJLQCTY",
+      "empresa_emisora": "MAS_CONSULTORES",
+      "periodo": "2025-11",
+      "fecha_solicitud": "2025-11-27",
+      "oc_numero": "1600236944",
+      "hes_numero": "N/A",
+      "glosa": "Servicio de administración y soporte mensual Plataforma Nutrir MAS",
+      "area": "MAS Plataformas",
+      "moneda_base": "CLP",
+      "uf_fecha": "2025-11-27",
+      "uf_valor": 39643.59,
+      "monto_neto_clp": 2775051,
+      "monto_iva_clp": 527260,
+      "monto_total_clp": 3302311,
+      "estado": "FACTURA SOLICITADA",
+      "observaciones": "UF 39643,59\n27-11-2025",
+      "cps": [
+        { "codigo": "MS25008", "monto_clp": 1387526 },
+        { "codigo": "MS25009", "monto_clp": 1387526 }
+      ],
+      "receptores": [
+        { "nombre": "Jeannette del Carmen Nanjari Barrera", "email": "jeannette.nanjari@soprole.cl" },
+        { "nombre": "Pablo Ruedi", "email": "pablo.ruedi@soprole.cl" }
+      ]
+    }
+  ]
+}

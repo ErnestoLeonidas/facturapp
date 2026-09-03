@@ -373,7 +373,7 @@ window.SolicitudesView = {
                 <div class="col-md-3">
                   <label class="form-label">Responsable *</label>
                   <select class="form-select" name="coordinador_id" id="sel-coordinador" data-readonly="${readonly ? '1' : '0'}" ${readonly?'disabled':''}>
-                    <option value="">seleccionar</option>
+                    <option value="">Seleccionar responsable</option>
                   </select>
                   <div class="invalid-feedback" data-error-for="coordinador_id"></div>
                 </div>
@@ -462,7 +462,7 @@ window.SolicitudesView = {
         </div>
 
         <aside class="col-lg-4">
-          <div class="card sticky-top" style="top:1rem">
+          <div class="card sticky-top solicitud-summary-card" style="top:1rem">
             <div class="card-header">Resumen</div>
             <div class="card-body">
               <div class="row g-2 mb-3">
@@ -570,6 +570,7 @@ window.SolicitudesView = {
       clienteActual: sol ? sol.cliente : (prefill.cliente || null),
       cpsDisponibles: [],
       coordinadorActual: coordActual,
+      responsableSugerido: null,
       activeCpIndex: ((sol && sol.cps && sol.cps.length) || (prefill.cps && prefill.cps.length)) ? 0 : null
     };
     SolicitudesView._renderCPs();
@@ -730,6 +731,23 @@ window.SolicitudesView = {
     SolicitudesView._recalcular();
   },
 
+  _responsableBaseCliente(cliente) {
+    return (cliente && (cliente.coordinador_id || (cliente.coordinador && cliente.coordinador.id))) || '';
+  },
+
+  _sugerirResponsableCliente(cliente, options = {}) {
+    const $sel = $('#sel-coordinador');
+    if (!$sel.length) return;
+    const base = SolicitudesView._responsableBaseCliente(cliente);
+    const actual = $sel.val() || '';
+    const state = SolicitudesView._state || {};
+    const fueSugerido = actual && state.responsableSugerido && actual === state.responsableSugerido;
+    const debeSugerir = !!base && (!actual || options.resetDependientes || fueSugerido);
+    const siguiente = debeSugerir ? base : actual;
+    if (SolicitudesView._state) SolicitudesView._state.responsableSugerido = debeSugerir ? base : null;
+    SolicitudesView._renderCoordinadoresSolicitud(siguiente);
+  },
+
   _onClienteSeleccionado(c, receptoresActuales, cpsActuales, options = {}) {
     const preserve = !!options.preserve;
     SolicitudesView._state.clienteActual = c;
@@ -737,7 +755,7 @@ window.SolicitudesView = {
     if ($('#cliente-autocomplete-input').length) $('#cliente-autocomplete-input').val(c.nombre_corto || '');
     SolicitudesView._toggleContratoHabitat(c);
     SolicitudesView._renderDatosFacturacionSolicitud(preserve ? ((SolicitudesView._state.prefill && SolicitudesView._state.prefill.cliente_facturacion_id) || '') : '');
-    SolicitudesView._renderCoordinadoresSolicitud($('[name=coordinador_id]').val());
+    SolicitudesView._sugerirResponsableCliente(c, options);
     if (preserve && receptoresActuales && receptoresActuales.length) {
       SolicitudesView._state.receptores = [...receptoresActuales];
     } else {
@@ -898,7 +916,7 @@ window.SolicitudesView = {
     }
 
     const actual = coordFijo || selectedId || $sel.val() || '';
-    $sel.empty().append('<option value="">seleccionar</option>');
+    $sel.empty().append('<option value="">Seleccionar responsable</option>');
     coords.forEach(c => $sel.append($('<option>').val(c.id).text(c.nombre).prop('selected', c.id === actual)));
     if (actual && !coords.some(c => c.id === actual)) {
       const extra = all.find(c => c.id === actual);

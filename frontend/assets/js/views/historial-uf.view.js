@@ -1,5 +1,6 @@
 window.HistorialUfView = {
   _anioDisponible: new Date().getFullYear(),
+  _aniosDisponibles: [2025, 2026],
   _meses: [
     'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -7,7 +8,7 @@ window.HistorialUfView = {
 
   render(params = {}) {
     const hoy = new Date();
-    const anio = HistorialUfView._anioDisponible;
+    const anio = HistorialUfView._anioSeleccionado(params.anio);
     const mes = Number(params.mes) || hoy.getMonth() + 1;
 
     UI.setTitle('Historial UF');
@@ -21,7 +22,9 @@ window.HistorialUfView = {
         </div>
         <div>
           <label class="form-label mb-1">Año</label>
-          <input type="text" class="form-control" id="uf-anio" value="${anio}" readonly style="width: 110px">
+          <select class="form-select" id="uf-anio" style="width: 110px">
+            ${HistorialUfView._aniosDisponibles.map(y => `<option value="${y}" ${anio === y ? 'selected' : ''}>${y}</option>`).join('')}
+          </select>
         </div>
         <button class="btn btn-primary" id="uf-consultar"><i class="bi bi-search"></i> Consultar UF</button>
         <button class="btn btn-outline-secondary" id="uf-mes-actual"><i class="bi bi-calendar-check"></i> Mes actual</button>
@@ -39,7 +42,7 @@ window.HistorialUfView = {
 
       <div class="card">
         <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0">
+          <table class="table table-hover align-middle mb-0 uf-history-table">
             <thead>
               <tr>
                 <th>Fecha</th>
@@ -56,9 +59,10 @@ window.HistorialUfView = {
     `);
 
     $('#uf-consultar').on('click', () => HistorialUfView._navegar());
+    $('#uf-anio').on('change', () => HistorialUfView._navegar());
     $('#uf-mes').on('change', () => HistorialUfView._navegar());
     $('#uf-mes-actual').on('click', () => {
-      location.hash = `#/historial-uf?anio=${HistorialUfView._anioDisponible}&mes=${hoy.getMonth() + 1}`;
+      location.hash = `#/historial-uf?anio=${HistorialUfView._anioSeleccionado(hoy.getFullYear())}&mes=${hoy.getMonth() + 1}`;
     });
 
     HistorialUfView._cargar();
@@ -66,9 +70,18 @@ window.HistorialUfView = {
 
   _filtros() {
     return {
-      anio: HistorialUfView._anioDisponible,
+      anio: $('#uf-anio').val(),
       mes: $('#uf-mes').val()
     };
+  },
+
+  _anioSeleccionado(value) {
+    const anios = HistorialUfView._aniosDisponibles;
+    const parsed = Number(value);
+    if (anios.includes(parsed)) return parsed;
+    const actual = new Date().getFullYear();
+    if (anios.includes(actual)) return actual;
+    return anios[anios.length - 1];
   },
 
   _navegar() {

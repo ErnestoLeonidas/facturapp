@@ -941,6 +941,46 @@ body.auth-screen .app-footer {
   gap: .75rem;
   padding: .75rem;
 }
+.clientes-mobile-list {
+  display: grid;
+  gap: .75rem;
+  padding: .75rem;
+}
+.cliente-mobile-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+  padding: .85rem;
+  border: 1px solid var(--border);
+  border-radius: .5rem;
+  background: var(--surface);
+  box-shadow: 0 10px 28px var(--shadow-soft);
+  cursor: pointer;
+}
+.cliente-mobile-card .min-w-0 {
+  display: grid;
+  gap: .1rem;
+}
+.cliente-mobile-card strong,
+.cliente-mobile-card span,
+.cliente-mobile-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cliente-mobile-card small {
+  color: var(--muted-2);
+}
+.cliente-mobile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .5rem;
+}
 .solicitud-mobile-card {
   min-width: 0;
   padding: .85rem;
@@ -1078,6 +1118,17 @@ body.auth-screen .app-footer {
 
 @media (max-width: 992px) {
   .topbar {
+    z-index: 1085;
+  }
+  .topbar #auth-status,
+  .topbar #auth-status .dropdown,
+  .topbar #auth-status .dropdown-menu {
+    z-index: 1090;
+  }
+  .solicitud-summary-card {
+    position: static !important;
+  }
+  .topbar {
     align-items: stretch !important;
     flex-direction: column;
     gap: .75rem;
@@ -1160,9 +1211,120 @@ body.auth-screen .app-footer {
   .solicitudes-filter-actions .btn {
     flex: 1 1 100%;
   }
+  .cliente-mobile-card {
+    grid-template-columns: 1fr;
+  }
+  .cliente-mobile-actions {
+    justify-content: flex-start;
+  }
+  .cliente-mobile-actions .btn {
+    width: 100%;
+  }
   .solicitud-mobile-meta {
     grid-template-columns: 1fr;
   }
+  #main-nav {
+    gap: .25rem;
+  }
+  .sidebar .nav-link {
+    padding: .45rem .55rem;
+  }
+  #div-cps table,
+  #div-cps thead,
+  #div-cps tbody,
+  #div-cps tr,
+  #div-cps th,
+  #div-cps td {
+    display: block;
+    width: 100%;
+  }
+  #div-cps thead {
+    display: none;
+  }
+  #div-cps tbody tr {
+    padding: .75rem;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+    background: var(--surface);
+  }
+  #div-cps tbody tr + tr {
+    margin-top: .75rem;
+  }
+  #div-cps tbody td {
+    border: 0;
+    padding: .35rem 0;
+  }
+  #div-cps tbody td::before {
+    display: block;
+    margin-bottom: .2rem;
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 700;
+  }
+  #div-cps tbody td:nth-child(1)::before { content: "CP"; }
+  #div-cps tbody td:nth-child(2)::before { content: "Monto UF"; }
+  #div-cps tbody td:nth-child(3)::before { content: "Monto CLP"; }
+  #div-cps tbody td:nth-child(4)::before { content: ""; display: none; }
+  #div-cps tbody .form-control,
+  #div-cps tbody .form-select,
+  #div-cps tbody [data-field="monto_clp"] {
+    max-width: none !important;
+    width: 100%;
+  }
+  .cliente-cp-table,
+  .cliente-cp-table thead,
+  .cliente-cp-table tbody,
+  .cliente-cp-table tr,
+  .cliente-cp-table th,
+  .cliente-cp-table td,
+  .uf-history-table,
+  .uf-history-table thead,
+  .uf-history-table tbody,
+  .uf-history-table tr,
+  .uf-history-table th,
+  .uf-history-table td {
+    display: block;
+    width: 100%;
+  }
+  .cliente-cp-table thead,
+  .uf-history-table thead {
+    display: none;
+  }
+  .cliente-cp-table tbody tr,
+  .uf-history-table tbody tr {
+    padding: .75rem;
+    border: 1px solid var(--border);
+    border-radius: .5rem;
+  }
+  .cliente-cp-table tbody tr + tr,
+  .uf-history-table tbody tr + tr {
+    margin-top: .75rem;
+  }
+  .cliente-cp-table tbody td,
+  .uf-history-table tbody td {
+    border: 0;
+    padding: .35rem 0;
+    text-align: left !important;
+  }
+  .cliente-cp-table tbody td::before,
+  .uf-history-table tbody td::before {
+    display: block;
+    margin-bottom: .2rem;
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 700;
+  }
+  .cliente-cp-table tbody td:nth-child(1)::before { content: "Codigo"; }
+  .cliente-cp-table tbody td:nth-child(2)::before { content: "Nombre"; }
+  .cliente-cp-table tbody td:nth-child(3)::before { content: "Tipo CP"; }
+  .cliente-cp-table tbody td:nth-child(4)::before { content: "Acciones"; }
+  .cliente-cp-table tbody td:last-child .btn {
+    width: 100%;
+    margin: .25rem 0 0 !important;
+  }
+  .uf-history-table tbody td:nth-child(1)::before { content: "Fecha"; }
+  .uf-history-table tbody td:nth-child(2)::before { content: "Valor UF"; }
+  .uf-history-table tbody td:nth-child(3)::before { content: "Ultima actualizacion"; }
 }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }

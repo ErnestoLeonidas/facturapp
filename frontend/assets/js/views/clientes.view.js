@@ -5,7 +5,7 @@ window.ClientesView = {
       <div class="card mb-3"><div class="card-body py-2">
         <div class="row g-2 align-items-center">
           <div class="col">
-            <input class="form-control form-control-sm" id="cli-q" placeholder="Buscar por cliente, RUT o responsable" autocomplete="off">
+            <input class="form-control form-control-sm" id="cli-q" placeholder="Buscar por cliente o RUT" autocomplete="off">
           </div>
           <div class="col-auto">
             <button class="btn btn-sm btn-primary" id="cli-nuevo" type="button">+</button>
@@ -13,16 +13,18 @@ window.ClientesView = {
         </div>
       </div></div>
       <div class="card">
-        <div class="table-responsive">
+        <div class="table-responsive clientes-table-wrap d-none d-md-block">
           <table class="table mb-0 align-middle table-hover">
             <thead><tr>
-              <th>Cliente</th><th>RUT</th>
-              <th>Responsable</th><th>Estado</th><th></th>
+              <th>Cliente</th><th>RUT</th><th>Estado</th><th></th>
             </tr></thead>
-            <tbody id="tbl-clientes"><tr><td colspan="5" class="text-center py-4">
+            <tbody id="tbl-clientes"><tr><td colspan="4" class="text-center py-4">
               <div class="spinner-border spinner-border-sm"></div>
             </td></tr></tbody>
           </table>
+        </div>
+        <div id="clientes-mobile-list" class="clientes-mobile-list d-md-none">
+          <div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></div>
         </div>
       </div>
       <!-- Modal nuevo cliente -->
@@ -46,15 +48,32 @@ window.ClientesView = {
       const q = String($('#cli-q').val() || '').trim();
       const params = q ? { q } : {};
       ClientesService.list(params).then(data => {
-        if (!data.length) { $('#tbl-clientes').html('<tr><td colspan="5" class="text-center text-muted py-3">Sin resultados</td></tr>'); return; }
+        if (!data.length) {
+          const empty = '<div class="text-center text-muted py-3">Sin resultados</div>';
+          $('#tbl-clientes').html('<tr><td colspan="4">' + empty + '</td></tr>');
+          $('#clientes-mobile-list').html(empty);
+          return;
+        }
         $('#tbl-clientes').html(data.map(c => `
           <tr style="cursor:pointer" onclick="ClientesView.detalle_inline('${c.id}')">
             <td><strong>${c.nombre_corto}</strong>${c.razon_social ? '<br><small class="text-muted">'+c.razon_social+'</small>' : ''}</td>
             <td>${c.rut || '—'}</td>
-            <td>${c.coordinador_nombre || '—'}</td>
             <td><span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span></td>
             <td><a class="btn btn-sm btn-outline-secondary" href="#/clientes/${c.id}">Ver</a></td>
           </tr>`).join(''));
+        $('#clientes-mobile-list').html(data.map(c => `
+          <article class="cliente-mobile-card" onclick="ClientesView.detalle_inline('${c.id}')">
+            <div class="min-w-0">
+              <strong>${c.nombre_corto}</strong>
+              ${c.razon_social ? '<span>'+c.razon_social+'</span>' : ''}
+              <small>${c.rut || 'Sin RUT'}</small>
+            </div>
+            <div class="cliente-mobile-actions">
+              <span class="badge ${c.estado==='Activo'?'bg-success':'bg-secondary'}">${c.estado}</span>
+              <a class="btn btn-sm btn-outline-secondary" href="#/clientes/${c.id}" onclick="event.stopPropagation()">Ver</a>
+            </div>
+          </article>
+        `).join(''));
       }).fail(e => UI.error('#tbl-clientes', e));
     };
 
@@ -162,7 +181,7 @@ window.ClientesView = {
                 <button class="btn btn-sm btn-outline-primary" id="btn-add-cp">+ CP</button>
               </div>
               <div class="table-responsive">
-                <table class="table table-sm mb-0 align-middle">
+                <table class="table table-sm mb-0 align-middle cliente-cp-table">
                   <thead><tr><th>Código</th><th>Nombre</th><th>Tipo CP</th><th class="text-end"></th></tr></thead>
                   <tbody>
                     ${(c.cps||[]).map(cp => `
